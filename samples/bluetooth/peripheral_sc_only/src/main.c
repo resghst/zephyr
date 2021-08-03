@@ -36,10 +36,10 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	}
 
 	printk("Connected %s\n", addr);
-
-	if (bt_conn_set_security(conn, BT_SECURITY_L4)) {
+	if (bt_conn_set_security(conn, BT_SECURITY_L3)) {
 		printk("Failed to set security\n");
 	}
+	
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -72,6 +72,9 @@ static void security_changed(struct bt_conn *conn, bt_security_t level,
 
 	if (!err) {
 		printk("Security changed: %s level %u\n", addr, level);
+		printk(" -enc_key: %d\n", bt_conn_enc_key_size(conn));
+		printk(" -security_level: %d\n", bt_conn_get_security(conn));
+		bt_conn_enc_key_info(conn);
 	} else {
 		printk("Security failed: %s level %u err %d\n", addr, level,
 		       err);
@@ -105,6 +108,8 @@ static void auth_cancel(struct bt_conn *conn)
 
 static void pairing_complete(struct bt_conn *conn, bool bonded)
 {
+	printk("enc_key: %d\n", bt_conn_enc_key_size(conn));
+	printk("security_level: %d\n", bt_conn_get_security(conn));
 	printk("Pairing Complete\n");
 }
 
@@ -120,6 +125,7 @@ static struct bt_conn_auth_cb auth_cb_display = {
 	.cancel = auth_cancel,
 	.pairing_complete = pairing_complete,
 	.pairing_failed = pairing_failed,
+	.pairing_confirm = NULL,
 };
 
 void main(void)
@@ -134,7 +140,7 @@ void main(void)
 
 	printk("Bluetooth initialized\n");
 
-
+	bt_passkey_set(0);
 	bt_conn_auth_cb_register(&auth_cb_display);
 	bt_conn_cb_register(&conn_callbacks);
 
