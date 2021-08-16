@@ -2144,7 +2144,7 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 		memcpy(ident->rand, rand.rand, sizeof(ident->rand));
 		memcpy(ident->ediv, rand.ediv, sizeof(ident->ediv));
 
-		smp_send(smp, buf, smp_ident_sent, NULL);
+		smp_send(smp, buf, NULL, NULL);
 
 		//=======================================
 		if (bt_rand((void *)&rand_xor, sizeof(rand_xor))) {
@@ -2160,6 +2160,8 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 		}
 		xorkey_info = net_buf_add(buf, sizeof(*xorkey_info));
 		memcpy(xorkey_info->xor_key, rand_xor.xor_key, sizeof(xorkey_info->xor_key));
+
+		smp_send(smp, buf, smp_ident_sent, NULL);
 
 
 		if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
