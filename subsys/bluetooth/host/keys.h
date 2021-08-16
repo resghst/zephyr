@@ -58,12 +58,14 @@ struct bt_keys {
 	uint16_t                   keys;
 	struct bt_ltk           ltk;
 	struct bt_irk           irk;
+	uint8_t                    xor_key[16];
 #if defined(CONFIG_BT_SIGNING)
 	struct bt_csrk          local_csrk;
 	struct bt_csrk          remote_csrk;
 #endif /* BT_SIGNING */
 #if !defined(CONFIG_BT_SMP_SC_PAIR_ONLY)
 	struct bt_ltk           slave_ltk;
+	uint8_t                 slave_xor_key[16];
 #endif /* CONFIG_BT_SMP_SC_PAIR_ONLY */
 #if (defined(CONFIG_BT_KEYS_OVERWRITE_OLDEST))
 	uint32_t                   aging_counter;

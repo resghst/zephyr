@@ -130,6 +130,11 @@ struct bt_smp_keypress_notif {
 
 #define BT_SMP_NUM_CMDS                         0x0f
 
+#define BT_SMP_CMD_ENCRYPT_XOR_INFO			0x10
+struct bt_smp_encrypt_xor_info {
+	uint8_t  xor_key[16];
+} __packed;
+
 int bt_smp_start_security(struct bt_conn *conn);
 bool bt_smp_request_ltk(struct bt_conn *conn, uint64_t rand, uint16_t ediv,
 			uint8_t *ltk);

@@ -72,55 +72,55 @@ static void print_buffer_comparison(const uint8_t *wanted_result,
 {
 	int i, j;
 
-	printk("Was waiting for: \n");
+	LOG_DBG("Was waiting for: ");
 
 	for (i = 0, j = 1; i < length; i++, j++) {
-		printk("0x%02x ", wanted_result[i]);
+		LOG_DBG("0x%02x ", wanted_result[i]);
 
 		if (j == 10) {
-			printk("\n");
+			LOG_DBG("");
 			j = 0;
 		}
 	}
 
-	printk("\n But got:\n");
+	LOG_DBG(" But got:");
 
 	for (i = 0, j = 1; i < length; i++, j++) {
-		printk("0x%02x ", result[i]);
+		LOG_DBG("0x%02x ", result[i]);
 
 		if (j == 10) {
-			printk("\n");
+			LOG_DBG("");
 			j = 0;
 		}
 	}
 
-	printk("\n");
+	LOG_DBG("");
 }
 
 static void print_buffer_uint8(uint8_t *result, size_t length)
 {
 	int i, j;
 	for (i = 0, j = 1; i < length; i++, j++) {
-		printk("0x%02x ", result[i]);
+		LOG_DBG("0x%02x ", result[i]);
 		if (j == 10) {
-			printk("\n");
+			LOG_DBG("");
 			j = 0;
 		}
 	}
-	printk("\n");
+	LOG_DBG("");
 }
 
 static void print_buffer_uint16(uint16_t *result, size_t length)
 {
 	int i, j;
 	for (i = 0, j = 1; i < length; i++, j++) {
-		printk("0x%02x ", result[i]);
+		LOG_DBG("0x%02x ", result[i]);
 		if (j == 10) {
-			printk("\n");
+			LOG_DBG("");
 			j = 0;
 		}
 	}
-	printk("\n");
+	LOG_DBG("");
 }
 
 int validate_hw_compatibility(const struct device *dev)
@@ -238,12 +238,12 @@ void ccm_mode(const struct device *dev)
 	LOG_INF("Output length (encryption): %d", encrypt.out_len);
 	LOG_INF("CCM mode ENCRYPT - Match");
 	int i=0;
-	printk("plain text: 0x");
-	for(i=0;i<sizeof(encrypt.in_len);i++) printk("%02x",encrypt.in_buf[i]);
-	printk("\n");
-	printk("enc: 0x");
-	for(i=0;i<sizeof(encrypt.in_len);i++) printk("%02x",encrypt.out_buf[i]);
-	printk("\n");
+	LOG_DBG("plain text: 0x");
+	for(i=0;i<sizeof(encrypt.in_len);i++) LOG_DBG("%02x",encrypt.in_buf[i]);
+	LOG_DBG("");
+	LOG_DBG("enc: 0x");
+	for(i=0;i<sizeof(encrypt.in_len);i++) LOG_DBG("%02x",encrypt.out_buf[i]);
+	LOG_DBG("");
 
 	cipher_free_session(dev, &ini);
 
@@ -269,12 +269,12 @@ void ccm_mode(const struct device *dev)
 		goto out;
 	}
 
-	printk("enc text: 0x");
-	for(i=0;i<sizeof(decrypt.in_len);i++) printk("%02x",decrypt.in_buf[i]);
-	printk("\n");
-	printk("plain: 0x");
-	for(i=0;i<sizeof(decrypt.in_len);i++) printk("%02x",decrypt.out_buf[i]);
-	printk("\n");
+	LOG_DBG("enc text: 0x");
+	for(i=0;i<sizeof(decrypt.in_len);i++) LOG_DBG("%02x",decrypt.in_buf[i]);
+	LOG_DBG("");
+	LOG_DBG("plain: 0x");
+	for(i=0;i<sizeof(decrypt.in_len);i++) LOG_DBG("%02x",decrypt.out_buf[i]);
+	LOG_DBG("");
 
 	LOG_INF("CCM mode DECRYPT - Match");
 out:
@@ -294,8 +294,8 @@ void d2h(int16_t dec_data, uint8_t *hex_data, uint8_t* len){
         quotient = quotient/256;
     }
 	int i=0;
-	for(i=0;i<j;i++) printk("%02x", hex_data[i]);
-	printk("\n");
+	for(i=0;i<j;i++) LOG_DBG("%02x", hex_data[i]);
+	LOG_DBG("");
 }
 
 void enc(const struct device *dev, uint8_t *data, uint8_t *enc_data, uint8_t data_len){
@@ -346,18 +346,17 @@ void enc(const struct device *dev, uint8_t *data, uint8_t *enc_data, uint8_t dat
 	LOG_INF("Output length (encryption): %d", encrypt.out_len);
 	LOG_INF("CCM mode ENCRYPT - Match");
 	int i=0;
-	printk("plain text: 0x");
-	for(i=0;i<sizeof(encrypt.in_len);i++) printk("%02x",encrypt.in_buf[i]);
-	printk("\n");
-	printk("enc: 0x");
-	for(i=0;i<sizeof(encrypt.in_len);i++) printk("%02x",encrypt.out_buf[i]);
-	printk("\n");
+	LOG_DBG("plain text: 0x");
+	for(i=0;i<sizeof(encrypt.in_len);i++) LOG_DBG("%02x",encrypt.in_buf[i]);
+	LOG_DBG("");
+	LOG_DBG("enc: 0x");
+	for(i=0;i<sizeof(encrypt.in_len);i++) LOG_DBG("%02x",encrypt.out_buf[i]);
+	LOG_DBG("");
 
 	cipher_free_session(dev, &ini);
 out:
 	cipher_free_session(dev, &ini);
 }
-
 
 static ssize_t read_u16(struct bt_conn *conn, const struct bt_gatt_attr *attr, void *buf,
 			uint16_t len, uint16_t offset)
@@ -417,7 +416,7 @@ static struct temperature_sensor sensor_1 = {
 
 static void temp_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
-	printk("temp_ccc_cfg_changed\n");
+	LOG_DBG("temp_ccc_cfg_changed");
 	simulate_temp = value == BT_GATT_CCC_NOTIFY;
 }
 
@@ -435,7 +434,7 @@ static ssize_t read_es_measurement(struct bt_conn *conn, const struct bt_gatt_at
 {
 	const struct es_measurement *value = attr->user_data;
 	struct read_es_measurement_rp rsp;
-
+	LOG_DBG("read measurement");
 	rsp.flags = sys_cpu_to_le16(value->flags);
 	rsp.sampling_function = value->sampling_func;
 	sys_put_le24(value->meas_period, rsp.measurement_period);
@@ -541,19 +540,22 @@ static void update_temperature(const struct device *dev, struct bt_conn *conn, c
 	/* Trigger notification if conditions are met */
 	if (notify) {
 		value = sensor->temp_value;
-		uint8_t *enc_value;
-		uint8_t *hex_value={0};
-		uint8_t enc_len=0;
-		d2h(value, enc_value, &enc_len);
-		enc(dev, hex_value, enc_value, sizeof(uint8_t));
-		value = sys_cpu_to_le16(sensor->temp_value);
 
-		printk("notify:  ");
-		print_buffer_uint16(&value, enc_len);
-		printk("enc_notify: ");
-		print_buffer_uint8(enc_value, enc_len);
+		LOG_DBG("TEM: %d", value);
 
-		bt_gatt_notify(conn, chrc, &enc_value, sizeof(value));
+		// uint8_t *enc_value;
+		// uint8_t *hex_value={0};
+		// uint8_t enc_len=0;
+		// d2h(value, enc_value, &enc_len);
+		// enc(dev, hex_value, enc_value, sizeof(uint8_t));
+		// value = sys_cpu_to_le16(sensor->temp_value);
+		// LOG_DBG("notify:  ");
+		// print_buffer_uint16(&value, enc_len);
+		// LOG_DBG("enc_notify: ");
+		// print_buffer_uint8(enc_value, enc_len);
+		// bt_gatt_notify(conn, chrc, &enc_value, sizeof(value));
+
+		bt_gatt_notify(conn, chrc, &value, sizeof(value));
 	}
 }
 
@@ -562,16 +564,17 @@ BT_GATT_SERVICE_DEFINE(ess_svc, BT_GATT_PRIMARY_SERVICE(BT_UUID_ESS),
 		       /* Temperature Sensor 1 */
 		       BT_GATT_CHARACTERISTIC(BT_UUID_TEMPERATURE,
 					      BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
-					      BT_GATT_PERM_READ, read_u16, NULL,
+					      BT_GATT_PERM_READ_ENCRYPT, read_u16, NULL,
 					      &sensor_1.temp_value),
-		       BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ,
+		       BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ_ENCRYPT,
 					  read_es_measurement, NULL, &sensor_1.meas),
 		       BT_GATT_CUD(SENSOR_1_NAME, BT_GATT_PERM_READ),
 		       BT_GATT_DESCRIPTOR(BT_UUID_VALID_RANGE, BT_GATT_PERM_READ,
 					  read_temp_valid_range, NULL, &sensor_1),
 		       BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING, BT_GATT_PERM_READ,
 					  read_temp_trigger_setting, NULL, &sensor_1),
-		       BT_GATT_CCC(temp_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), );
+		       BT_GATT_CCC(temp_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), 
+);
 
 static void ess_simulate(const struct device *dev)
 {
@@ -603,13 +606,13 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	if (err) {
-		printk("Failed to connect to %s (%u)\n", addr, err);
+		LOG_DBG("Failed to connect to %s (%u)", addr, err);
 		return;
 	}
 
-	printk("Connected %s\n", addr);
+	LOG_DBG("Connected %s", addr);
 	if (bt_conn_set_security(conn, BT_SECURITY_L3)) {
-		printk("Failed to set security\n");
+		LOG_DBG("Failed to set security");
 	}
 }
 
@@ -619,7 +622,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
-	printk("Disconnected from %s (reason 0x%02x)\n", addr, reason);
+	LOG_DBG("Disconnected from %s (reason 0x%02x)", addr, reason);
 }
 
 static void identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
@@ -631,7 +634,7 @@ static void identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
 	bt_addr_le_to_str(identity, addr_identity, sizeof(addr_identity));
 	bt_addr_le_to_str(rpa, addr_rpa, sizeof(addr_rpa));
 
-	printk("Identity resolved %s -> %s\n", addr_rpa, addr_identity);
+	LOG_DBG("Identity resolved %s -> %s", addr_rpa, addr_identity);
 }
 
 static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
@@ -641,12 +644,12 @@ static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	if (!err) {
-		printk("Security changed: %s level %u\n", addr, level);
-		printk(" -enc_key: %d\n", bt_conn_enc_key_size(conn));
-		printk(" -security_level: %d\n", bt_conn_get_security(conn));
+		LOG_DBG("Security changed: %s level %u", addr, level);
+		LOG_DBG(" -enc_key: %d", bt_conn_enc_key_size(conn));
+		LOG_DBG(" -security_level: %d", bt_conn_get_security(conn));
 		// bt_conn_enc_key_info(conn);
 	} else {
-		printk("Security failed: %s level %u err %d\n", addr, level, err);
+		LOG_DBG("Security failed: %s level %u err %d", addr, level, err);
 	}
 }
 
@@ -663,7 +666,7 @@ static void auth_passkey_display(struct bt_conn *conn, unsigned int passkey)
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
-	printk("Passkey for %s: %06u\n", addr, passkey);
+	LOG_DBG("Passkey for %s: %06u", addr, passkey);
 }
 
 static void auth_cancel(struct bt_conn *conn)
@@ -672,19 +675,19 @@ static void auth_cancel(struct bt_conn *conn)
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
-	printk("Pairing cancelled: %s\n", addr);
+	LOG_DBG("Pairing cancelled: %s", addr);
 }
 
 static void pairing_complete(struct bt_conn *conn, bool bonded)
 {
-	printk("enc_key: %d\n", bt_conn_enc_key_size(conn));
-	printk("security_level: %d\n", bt_conn_get_security(conn));
-	printk("Pairing Complete\n");
+	LOG_DBG("enc_key: %d", bt_conn_enc_key_size(conn));
+	LOG_DBG("security_level: %d", bt_conn_get_security(conn));
+	LOG_DBG("Pairing Complete");
 }
 
 static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 {
-	printk("Pairing Failed (%d). Disconnecting.\n", reason);
+	LOG_DBG("Pairing Failed (%d). Disconnecting.", reason);
 	bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
 }
 
@@ -711,15 +714,15 @@ void main(void)
 		return;
 	}
 	ccm_mode(dev);
-	printk("..............\n");
+	LOG_DBG("..............");
 
 	err = bt_enable(NULL);
 	if (err) {
-		printk("Bluetooth init failed (err %d)\n", err);
+		LOG_DBG("Bluetooth init failed (err %d)", err);
 		return;
 	}
 
-	printk("Bluetooth initialized\n");
+	LOG_DBG("Bluetooth initialized");
 
 	bt_passkey_set(0);
 	bt_conn_auth_cb_register(&auth_cb_display);
@@ -727,11 +730,11 @@ void main(void)
 
 	err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
 	if (err) {
-		printk("Advertising failed to start (err %d)\n", err);
+		LOG_DBG("Advertising failed to start (err %d)", err);
 		return;
 	}
 
-	printk("Advertising successfully started\n");
+	LOG_DBG("Advertising successfully started");
 
 	while (1) {
 		k_sleep(K_SECONDS(1));
@@ -739,7 +742,7 @@ void main(void)
 		
 		/* Temperature simulation */
 		if (simulate_temp) {
-			// printk("start porting %d .....\n",simulate_temp);
+			// LOG_DBG("start porting %d .....",simulate_temp);
 			ess_simulate(dev);
 		}
 

@@ -2095,6 +2095,8 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 	if (smp->local_dist & BT_SMP_DIST_ENC_KEY) {
 		struct bt_smp_encrypt_info *info;
 		struct bt_smp_master_ident *ident;
+		//=======================================
+		struct bt_smp_encrypt_xor_info *xorkey_info;
 		struct net_buf *buf;
 		/* Use struct to get randomness in single call to bt_rand */
 		struct {
@@ -2102,6 +2104,11 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 			uint8_t rand[8];
 			uint8_t ediv[2];
 		} rand;
+
+		//=======================================
+		struct {
+			uint8_t xor_key[16];
+		} rand_xor;
 
 		if (bt_rand((void *)&rand, sizeof(rand))) {
 			BT_ERR("Unable to get random bytes");
@@ -2139,6 +2146,22 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 
 		smp_send(smp, buf, smp_ident_sent, NULL);
 
+		//=======================================
+		if (bt_rand((void *)&rand_xor, sizeof(rand_xor))) {
+			BT_ERR("Unable to get random bytes for XORKEY");
+			return;
+		}
+
+		buf = smp_create_pdu(smp, BT_SMP_CMD_ENCRYPT_XOR_INFO,
+				     sizeof(*xorkey_info));
+		if (!buf) {
+			BT_ERR("Unable to allocate Encrypt XORKEY Info buffer");
+			return;
+		}
+		xorkey_info = net_buf_add(buf, sizeof(*xorkey_info));
+		memcpy(xorkey_info->xor_key, rand_xor.xor_key, sizeof(xorkey_info->xor_key));
+
+
 		if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
 			bt_keys_add_type(keys, BT_KEYS_SLAVE_LTK);
 
@@ -2148,6 +2171,9 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 			       sizeof(keys->slave_ltk.rand));
 			memcpy(keys->slave_ltk.ediv, rand.ediv,
 			       sizeof(keys->slave_ltk.ediv));
+			//=======================================
+			memcpy(keys->slave_xor_key, rand_xor.xor_key,
+			       sizeof(keys->slave_xor_key));
 		}
 	}
 }

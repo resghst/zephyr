@@ -311,18 +311,22 @@ int bt_hci_ecc_send(struct net_buf *buf)
 
 		switch (sys_le16_to_cpu(chdr->opcode)) {
 		case BT_HCI_OP_LE_P256_PUBLIC_KEY:
+			BT_INFO("PUBLIC_KEY");
 			net_buf_pull(buf, sizeof(*chdr));
 			le_p256_pub_key(buf);
 			return 0;
 		case BT_HCI_OP_LE_GENERATE_DHKEY:
+			BT_INFO("DHKEY");
 			net_buf_pull(buf, sizeof(*chdr));
 			le_gen_dhkey_v1(buf);
 			return 0;
 		case BT_HCI_OP_LE_GENERATE_DHKEY_V2:
+			BT_INFO("DHKEY_V2");
 			net_buf_pull(buf, sizeof(*chdr));
 			le_gen_dhkey_v2(buf);
 			return 0;
 		case BT_HCI_OP_LE_SET_EVENT_MASK:
+			BT_INFO("MASK");
 			clear_ecc_events(buf);
 			break;
 		default:
