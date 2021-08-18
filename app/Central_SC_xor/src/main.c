@@ -67,6 +67,12 @@ LOG_MODULE_REGISTER(main);
 
 uint32_t cap_flags;
 
+static void start_scan(void);
+static struct bt_conn *default_conn;
+static struct bt_uuid_16 uuid = BT_UUID_INIT_16(0);
+static struct bt_gatt_discover_params discover_params;
+static struct bt_gatt_subscribe_params subscribe_params;
+
 static void print_buffer_comparison(const uint8_t *wanted_result,
 				    uint8_t *result, size_t length)
 {
@@ -94,32 +100,6 @@ static void print_buffer_comparison(const uint8_t *wanted_result,
 		}
 	}
 
-	LOG_DBG("");
-}
-
-static void print_buffer_uint8(uint8_t *result, size_t length)
-{
-	int i, j;
-	for (i = 0, j = 1; i < length; i++, j++) {
-		LOG_DBG("0x%02x ", result[i]);
-		if (j == 10) {
-			LOG_DBG("");
-			j = 0;
-		}
-	}
-	LOG_DBG("");
-}
-
-static void print_buffer_uint16(uint16_t *result, size_t length)
-{
-	int i, j;
-	for (i = 0, j = 1; i < length; i++, j++) {
-		LOG_DBG("0x%02x ", result[i]);
-		if (j == 10) {
-			LOG_DBG("");
-			j = 0;
-		}
-	}
 	LOG_DBG("");
 }
 
@@ -528,76 +508,179 @@ static bool check_condition(uint8_t condition, int16_t old_val, int16_t new_val,
 	}
 }
 
-static void update_temperature(const struct device *dev, struct bt_conn *conn, const struct bt_gatt_attr *chrc, int16_t value,
-			       struct temperature_sensor *sensor)
-{
-	bool notify =
-		check_condition(sensor->condition, sensor->temp_value, value, sensor->ref_val);
+BT_GATT_SERVICE_DEFINE(ess_svc, BT_GATT_PRIMARY_SERVICE(BT_UUID_ESS),
 
-	/* Update temperature value */
-	sensor->temp_value = value;
-
-	/* Trigger notification if conditions are met */
-	if (notify) {
-		value = sensor->temp_value;
-
-		LOG_DBG("TEM: %d", value);
-
-		// uint8_t *enc_value;
-		// uint8_t *hex_value={0};
-		// uint8_t enc_len=0;
-		// d2h(value, enc_value, &enc_len);
-		// enc(dev, hex_value, enc_value, sizeof(uint8_t));
-		// value = sys_cpu_to_le16(sensor->temp_value);
-		// LOG_DBG("notify:  ");
-		// print_buffer_uint16(&value, enc_len);
-		// LOG_DBG("enc_notify: ");
-		// print_buffer_uint8(enc_value, enc_len);
-		// bt_gatt_notify(conn, chrc, &enc_value, sizeof(value));
-
-		bt_gatt_notify(conn, chrc, &value, sizeof(value));
-	}
-}
-
-BT_GATT_SERVICE_DEFINE(ess_svc, 
-	BT_GATT_PRIMARY_SERVICE(BT_UUID_ESS),
-	/* Temperature Sensor 1 */
-	BT_GATT_CHARACTERISTIC(BT_UUID_TEMPERATURE,
-				BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
-				BT_GATT_PERM_READ_ENCRYPT, read_u16, NULL,
-				&sensor_1.temp_value),
-	BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ_ENCRYPT,
-			read_es_measurement, NULL, &sensor_1.meas),
-	BT_GATT_CUD(SENSOR_1_NAME, BT_GATT_PERM_READ),
-	BT_GATT_DESCRIPTOR(BT_UUID_VALID_RANGE, BT_GATT_PERM_READ,
-			read_temp_valid_range, NULL, &sensor_1),
-	BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING, BT_GATT_PERM_READ,
-			read_temp_trigger_setting, NULL, &sensor_1),
-	BT_GATT_CCC(temp_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), 
+		       /* Temperature Sensor 1 */
+		       BT_GATT_CHARACTERISTIC(BT_UUID_TEMPERATURE,
+					      BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
+					      BT_GATT_PERM_READ_ENCRYPT, read_u16, NULL,
+					      &sensor_1.temp_value),
+		       BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ_ENCRYPT,
+					  read_es_measurement, NULL, &sensor_1.meas),
+		       BT_GATT_CUD(SENSOR_1_NAME, BT_GATT_PERM_READ),
+		       BT_GATT_DESCRIPTOR(BT_UUID_VALID_RANGE, BT_GATT_PERM_READ,
+					  read_temp_valid_range, NULL, &sensor_1),
+		       BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING, BT_GATT_PERM_READ,
+					  read_temp_trigger_setting, NULL, &sensor_1),
+		       BT_GATT_CCC(temp_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), 
 );
 
-static void ess_simulate(const struct device *dev)
+static uint8_t notify_func(struct bt_conn *conn,
+			   struct bt_gatt_subscribe_params *params,
+			   const void *data, uint16_t length)
 {
-	static uint8_t i;
-	uint16_t val;
-
-	if (!(i % SENSOR_1_UPDATE_IVAL)) {
-		val = 1200 + i;
-		update_temperature(dev, NULL, &ess_svc.attrs[2], val, &sensor_1);
+	if (!data) {
+		printk("[UNSUBSCRIBED]\n");
+		params->value_handle = 0U;
+		return BT_GATT_ITER_STOP;
 	}
 
-	if (!(i % INT8_MAX)) {
-		i = 0U;
-	}
+	printk("[NOTIFICATION] data %p length %u\n", data, length);
 
-	i++;
+	return BT_GATT_ITER_CONTINUE;
 }
 
-static const struct bt_data ad[] = {
-	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x00, 0x03),
-	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_ESS_VAL)),
-};
+static uint8_t discover_func(struct bt_conn *conn,
+			     const struct bt_gatt_attr *attr,
+			     struct bt_gatt_discover_params *params)
+{
+	int err;
+
+	if (!attr) {
+		printk("Discover complete\n");
+		(void)memset(params, 0, sizeof(*params));
+		return BT_GATT_ITER_STOP;
+	}
+
+	printk("[ATTRIBUTE] handle %u\n", attr->handle);
+
+	if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_ESS)) {
+		memcpy(&uuid, BT_UUID_TEMPERATURE, sizeof(uuid));
+		discover_params.uuid = &uuid.uuid;
+		discover_params.start_handle = attr->handle + 1;
+		discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
+
+		err = bt_gatt_discover(conn, &discover_params);
+		if (err) {
+			printk("Discover failed (err %d)\n", err);
+		}
+	} else if (!bt_uuid_cmp(discover_params.uuid,
+				BT_UUID_TEMPERATURE)) {
+		memcpy(&uuid, BT_UUID_GATT_CCC, sizeof(uuid));
+		discover_params.uuid = &uuid.uuid;
+		discover_params.start_handle = attr->handle + 2;
+		discover_params.type = BT_GATT_DISCOVER_DESCRIPTOR;
+		subscribe_params.value_handle = bt_gatt_attr_value_handle(attr);
+
+		err = bt_gatt_discover(conn, &discover_params);
+		if (err) {
+			printk("Discover failed (err %d)\n", err);
+		}
+	} else {
+		subscribe_params.notify = notify_func;
+		subscribe_params.value = BT_GATT_CCC_NOTIFY;
+		subscribe_params.ccc_handle = attr->handle;
+
+		err = bt_gatt_subscribe(conn, &subscribe_params);
+		if (err && err != -EALREADY) {
+			printk("Subscribe failed (err %d)\n", err);
+		} else {
+			printk("[SUBSCRIBED]\n");
+		}
+
+		return BT_GATT_ITER_STOP;
+	}
+
+	return BT_GATT_ITER_CONTINUE;
+}
+
+static bool eir_found(struct bt_data *data, void *user_data)
+{
+	bt_addr_le_t *addr = user_data;
+	int i;
+
+	printk("[AD]: %u data_len %u\n", data->type, data->data_len);
+
+	switch (data->type) {
+	case BT_DATA_UUID16_SOME:
+	case BT_DATA_UUID16_ALL:
+		if (data->data_len % sizeof(uint16_t) != 0U) {
+			printk("AD malformed\n");
+			return true;
+		}
+
+		for (i = 0; i < data->data_len; i += sizeof(uint16_t)) {
+			struct bt_le_conn_param *param;
+			struct bt_uuid *uuid;
+			uint16_t u16;
+			int err;
+
+			memcpy(&u16, &data->data[i], sizeof(u16));
+			uuid = BT_UUID_DECLARE_16(sys_le16_to_cpu(u16));
+			
+			// BT_UUID_ESS is the application Type
+			if (bt_uuid_cmp(uuid, BT_UUID_ESS)) {
+				continue;
+			}
+
+			err = bt_le_scan_stop();
+			if (err) {
+				printk("Stop LE scan failed (err %d)\n", err);
+				continue;
+			}
+
+			param = BT_LE_CONN_PARAM_DEFAULT;
+			err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN,
+						param, &default_conn);
+			if (err) {
+				printk("Create conn failed (err %d)\n", err);
+				start_scan();
+			}
+
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
+			 struct net_buf_simple *ad)
+{
+	char dev[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(addr, dev, sizeof(dev));
+	printk("[DEVICE]: %s, AD evt type %u, AD data len %u, RSSI %i\n",
+	       dev, type, ad->len, rssi);
+
+	/* We're only interested in connectable events */
+	if (type == BT_GAP_ADV_TYPE_ADV_IND ||
+	    type == BT_GAP_ADV_TYPE_ADV_DIRECT_IND) {
+		bt_data_parse(ad, eir_found, (void *)addr);
+	}
+}
+
+static void start_scan(void)
+{
+	int err;
+
+	/* Use active scanning and disable duplicate filtering to handle any
+	 * devices that might update their advertising data at runtime. */
+	struct bt_le_scan_param scan_param = {
+		.type       = BT_LE_SCAN_TYPE_ACTIVE,
+		.options    = BT_LE_SCAN_OPT_NONE,
+		.interval   = BT_GAP_SCAN_FAST_INTERVAL,
+		.window     = BT_GAP_SCAN_FAST_WINDOW,
+	};
+
+	err = bt_le_scan_start(&scan_param, device_found);
+	if (err) {
+		printk("Scanning failed to start (err %d)\n", err);
+		return;
+	}
+
+	printk("Scanning successfully started\n");
+}
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
@@ -607,12 +690,30 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 	if (err) {
 		LOG_DBG("Failed to connect to %s (%u)", addr, err);
+
+		bt_conn_unref(default_conn);
+		default_conn = NULL;
+		start_scan();
 		return;
 	}
+	LOG_DBG("Connected: %s\n", addr);
 
-	LOG_DBG("Connected %s", addr);
 	if (bt_conn_set_security(conn, BT_SECURITY_L3)) {
 		LOG_DBG("Failed to set security");
+	}
+	if (conn == default_conn) {
+		memcpy(&uuid, BT_UUID_TEMPERATURE, sizeof(uuid));
+		discover_params.uuid = &uuid.uuid;
+		discover_params.func = discover_func;
+		discover_params.start_handle = BT_ATT_FIRST_ATTTRIBUTE_HANDLE;
+		discover_params.end_handle = BT_ATT_LAST_ATTTRIBUTE_HANDLE;
+		discover_params.type = BT_GATT_DISCOVER_PRIMARY;
+
+		err = bt_gatt_discover(default_conn, &discover_params);
+		if (err) {
+			printk("Discover failed(err %d)\n", err);
+			return;
+		}
 	}
 }
 
@@ -728,25 +829,19 @@ void main(void)
 	bt_conn_auth_cb_register(&auth_cb_display);
 	bt_conn_cb_register(&conn_callbacks);
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
-	if (err) {
-		LOG_DBG("Advertising failed to start (err %d)", err);
-		return;
-	}
+	start_scan();
 
-	LOG_DBG("Advertising successfully started");
-
-	while (1) {
-		k_sleep(K_SECONDS(1));
+	// while (1) {
+	// 	k_sleep(K_SECONDS(1));
 
 		
-		/* Temperature simulation */
-		if (simulate_temp) {
-			// LOG_DBG("start porting %d .....",simulate_temp);
-			ess_simulate(dev);
-		}
+	// 	/* Temperature simulation */
+	// 	if (simulate_temp) {
+	// 		// LOG_DBG("start porting %d .....",simulate_temp);
+	// 		ess_simulate(dev);
+	// 	}
 
-		// /* Battery level simulation */
-		// bas_notify();
-	}
+	// 	// /* Battery level simulation */
+	// 	// bas_notify();
+	// }
 }
