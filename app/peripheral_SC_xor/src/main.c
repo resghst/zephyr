@@ -564,15 +564,15 @@ BT_GATT_SERVICE_DEFINE(ess_svc,
 	/* Temperature Sensor 1 */
 	BT_GATT_CHARACTERISTIC(BT_UUID_TEMPERATURE,
 				BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
-				BT_GATT_PERM_READ_ENCRYPT, read_u16, NULL,
+				BT_GATT_PERM_READ, read_u16, NULL,
 				&sensor_1.temp_value),
-	BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ_ENCRYPT,
-			read_es_measurement, NULL, &sensor_1.meas),
+	// BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ,
+	// 		read_es_measurement, NULL, &sensor_1.meas),
 	BT_GATT_CUD(SENSOR_1_NAME, BT_GATT_PERM_READ),
-	BT_GATT_DESCRIPTOR(BT_UUID_VALID_RANGE, BT_GATT_PERM_READ,
-			read_temp_valid_range, NULL, &sensor_1),
-	BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING, BT_GATT_PERM_READ,
-			read_temp_trigger_setting, NULL, &sensor_1),
+	// BT_GATT_DESCRIPTOR(BT_UUID_VALID_RANGE, BT_GATT_PERM_READ,
+	// 		read_temp_valid_range, NULL, &sensor_1),
+	// BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING, BT_GATT_PERM_READ,
+	// 		read_temp_trigger_setting, NULL, &sensor_1),
 	BT_GATT_CCC(temp_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), 
 );
 
@@ -595,8 +595,11 @@ static void ess_simulate(const struct device *dev)
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x00, 0x03),
-	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_ESS_VAL)),
+	// BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x00, 0x03),
+	BT_DATA_BYTES(BT_DATA_UUID16_ALL, 
+	BT_UUID_16_ENCODE(BT_UUID_ESS_VAL),
+	BT_UUID_16_ENCODE(BT_UUID_TEMPERATURE_VAL),
+	),
 };
 
 static void connected(struct bt_conn *conn, uint8_t err)
@@ -611,7 +614,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	}
 
 	LOG_DBG("Connected %s", addr);
-	if (bt_conn_set_security(conn, BT_SECURITY_L3)) {
+	if (bt_conn_set_security(conn, BT_SECURITY_L4)) {
 		LOG_DBG("Failed to set security");
 	}
 }

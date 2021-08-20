@@ -1,6 +1,6 @@
 sample:
-  description: TBD
-  name: TBD
+  description: TBDC
+  name: TBDC
 tests:
   sample.bluetooth.peripheral_sc_xoe:
     harness: bluetooth
