@@ -6,6 +6,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdio.h>
+#include <stddef.h>
+#include <errno.h>
+
 #include <stdbool.h>
 #include <zephyr/types.h>
 #include <stddef.h>
@@ -73,36 +77,6 @@ static struct bt_uuid_16 uuid = BT_UUID_INIT_16(0);
 static struct bt_gatt_discover_params discover_params;
 static struct bt_gatt_subscribe_params subscribe_params;
 
-static void print_buffer_comparison(const uint8_t *wanted_result,
-				    uint8_t *result, size_t length)
-{
-	int i, j;
-
-	LOG_DBG("Was waiting for: ");
-
-	for (i = 0, j = 1; i < length; i++, j++) {
-		LOG_DBG("0x%02x ", wanted_result[i]);
-
-		if (j == 10) {
-			LOG_DBG("");
-			j = 0;
-		}
-	}
-
-	LOG_DBG(" But got:");
-
-	for (i = 0, j = 1; i < length; i++, j++) {
-		LOG_DBG("0x%02x ", result[i]);
-
-		if (j == 10) {
-			LOG_DBG("");
-			j = 0;
-		}
-	}
-
-	LOG_DBG("");
-}
-
 int validate_hw_compatibility(const struct device *dev)
 {
 	uint32_t flags = 0U;
@@ -130,221 +104,6 @@ int validate_hw_compatibility(const struct device *dev)
 
 	return 0;
 
-}
-
-/* RFC 3610 test vector #1 */
-static uint8_t ccm_key[16] = {
-	0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb,
-	0xcc, 0xcd, 0xce, 0xcf
-};
-static uint8_t ccm_nonce[13] = {
-	0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x00, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4,
-	0xa5
-};
-static uint8_t ccm_hdr[8] = {
-	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07
-};
-static uint8_t ccm_data[23] = {
-	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
-	0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e
-};
-static const uint8_t ccm_expected[31] = {
-	0x58, 0x8c, 0x97, 0x9a, 0x61, 0xc6, 0x63, 0xd2, 0xf0, 0x66, 0xd0, 0xc2,
-	0xc0, 0xf9, 0x89, 0x80, 0x6d, 0x5f, 0x6b, 0x61, 0xda, 0xc3, 0x84, 0x17,
-	0xe8, 0xd1, 0x2c, 0xfd, 0xf9, 0x26, 0xe0
-};
-
-void ccm_mode(const struct device *dev)
-{
-	uint8_t encrypted[50]={0};
-	uint8_t decrypted[25]={0};
-	struct cipher_ctx ini = {
-		.keylen = sizeof(ccm_key),
-		.key.bit_stream = ccm_key,
-		.mode_params.ccm_info = {
-			.nonce_len = sizeof(ccm_nonce),
-			.tag_len = 8,
-		},
-		.flags = cap_flags,
-	};
-	struct cipher_pkt encrypt = {
-		.in_buf = ccm_data,
-		.in_len = sizeof(ccm_data),
-		.out_buf_max = sizeof(encrypted),
-		.out_buf = encrypted,
-	};
-	struct cipher_aead_pkt ccm_op = {
-		.ad = ccm_hdr,
-		.ad_len = sizeof(ccm_hdr),
-		.pkt = &encrypt,
-		/* TinyCrypt always puts the tag at the end of the ciphered
-		 * text, but other library such as mbedtls might be more
-		 * flexible and can take a different buffer for it.  So to
-		 * make sure test passes on all backends: enforcing the tag
-		 * buffer to be after the ciphered text.
-		 */
-		.tag = encrypted + sizeof(ccm_data),
-	};
-	struct cipher_pkt decrypt = {
-		.in_buf = encrypted,
-		.in_len = sizeof(ccm_data),
-		.out_buf = decrypted,
-		.out_buf_max = sizeof(decrypted),
-	};
-
-	if (cipher_begin_session(dev, &ini, CRYPTO_CIPHER_ALGO_AES,
-				 CRYPTO_CIPHER_MODE_CCM,
-				 CRYPTO_CIPHER_OP_ENCRYPT)) {
-		return;
-	}
-
-	ccm_op.pkt = &encrypt;
-	if (cipher_ccm_op(&ini, &ccm_op, ccm_nonce)) {
-		LOG_ERR("CCM mode ENCRYPT - Failed");
-		goto out;
-	}
-
-
-	LOG_INF("Output length (encryption): %d", encrypt.out_len);
-
-	if (memcmp(encrypt.out_buf, ccm_expected, sizeof(ccm_expected))) {
-		LOG_ERR("CCM mode ENCRYPT - Mismatch between expected "
-			    "and returned cipher text");
-		print_buffer_comparison(ccm_expected,
-					encrypt.out_buf, sizeof(ccm_expected));
-		goto out;
-	}
-
-	LOG_INF("Output length (encryption): %d", encrypt.out_len);
-	LOG_INF("CCM mode ENCRYPT - Match");
-	int i=0;
-	LOG_DBG("plain text: 0x");
-	for(i=0;i<sizeof(encrypt.in_len);i++) LOG_DBG("%02x",encrypt.in_buf[i]);
-	LOG_DBG("");
-	LOG_DBG("enc: 0x");
-	for(i=0;i<sizeof(encrypt.in_len);i++) LOG_DBG("%02x",encrypt.out_buf[i]);
-	LOG_DBG("");
-
-	cipher_free_session(dev, &ini);
-
-	if (cipher_begin_session(dev, &ini, CRYPTO_CIPHER_ALGO_AES,
-				 CRYPTO_CIPHER_MODE_CCM,
-				 CRYPTO_CIPHER_OP_DECRYPT)) {
-		return;
-	}
-
-	ccm_op.pkt = &decrypt;
-	if (cipher_ccm_op(&ini, &ccm_op, ccm_nonce)) {
-		LOG_ERR("CCM mode DECRYPT - Failed");
-		goto out;
-	}
-
-	LOG_INF("Output length (decryption): %d", decrypt.out_len);
-
-	if (memcmp(decrypt.out_buf, ccm_data, sizeof(ccm_data))) {
-		LOG_ERR("CCM mode DECRYPT - Mismatch between plaintext "
-			"and decrypted cipher text");
-		print_buffer_comparison(ccm_data,
-					decrypt.out_buf, sizeof(ccm_data));
-		goto out;
-	}
-
-	LOG_DBG("enc text: 0x");
-	for(i=0;i<sizeof(decrypt.in_len);i++) LOG_DBG("%02x",decrypt.in_buf[i]);
-	LOG_DBG("");
-	LOG_DBG("plain: 0x");
-	for(i=0;i<sizeof(decrypt.in_len);i++) LOG_DBG("%02x",decrypt.out_buf[i]);
-	LOG_DBG("");
-
-	LOG_INF("CCM mode DECRYPT - Match");
-out:
-	cipher_free_session(dev, &ini);
-}
-
-void d2h(int16_t dec_data, uint8_t *hex_data, uint8_t* len){
-    int16_t quotient= dec_data;
-    uint8_t hexadecimalnum[100], j = 0;
-	len = &j;
- 	hex_data = &hexadecimalnum[0];
-	LOG_INF("dec value: %d", dec_data);
-	LOG_INF("hex value:");
-    while (quotient != 0)
-    {	
-		hexadecimalnum[j++] = quotient % 256;
-        quotient = quotient/256;
-    }
-	int i=0;
-	for(i=0;i<j;i++) LOG_DBG("%02x", hex_data[i]);
-	LOG_DBG("");
-}
-
-void enc(const struct device *dev, uint8_t *data, uint8_t *enc_data, uint8_t data_len){
-	
-	uint8_t encrypted[50]={0};
-	enc_data = &encrypted[0];
-	struct cipher_ctx ini = {
-		.keylen = sizeof(ccm_key),
-		.key.bit_stream = ccm_key,
-		.mode_params.ccm_info = {
-			.nonce_len = sizeof(ccm_nonce),
-			.tag_len = 8,
-		},
-		.flags = cap_flags,
-	};
-	struct cipher_pkt encrypt = {
-		.in_buf = data,
-		.in_len = data_len,
-		.out_buf_max = sizeof(encrypted),
-		.out_buf = encrypted,
-	};
-	struct cipher_aead_pkt ccm_op = {
-		.ad = ccm_hdr,
-		.ad_len = sizeof(ccm_hdr),
-		.pkt = &encrypt,
-		/* TinyCrypt always puts the tag at the end of the ciphered
-		 * text, but other library such as mbedtls might be more
-		 * flexible and can take a different buffer for it.  So to
-		 * make sure test passes on all backends: enforcing the tag
-		 * buffer to be after the ciphered text.
-		 */
-		.tag = encrypted + sizeof(ccm_data),
-	};
-
-	if (cipher_begin_session(dev, &ini, CRYPTO_CIPHER_ALGO_AES,
-				 CRYPTO_CIPHER_MODE_CCM,
-				 CRYPTO_CIPHER_OP_ENCRYPT)) {
-		return;
-	}
-
-	ccm_op.pkt = &encrypt;
-	if (cipher_ccm_op(&ini, &ccm_op, ccm_nonce)) {
-		LOG_ERR("CCM mode ENCRYPT - Failed");
-		goto out;
-	}
-
-
-	LOG_INF("Output length (encryption): %d", encrypt.out_len);
-	LOG_INF("CCM mode ENCRYPT - Match");
-	int i=0;
-	LOG_DBG("plain text: 0x");
-	for(i=0;i<sizeof(encrypt.in_len);i++) LOG_DBG("%02x",encrypt.in_buf[i]);
-	LOG_DBG("");
-	LOG_DBG("enc: 0x");
-	for(i=0;i<sizeof(encrypt.in_len);i++) LOG_DBG("%02x",encrypt.out_buf[i]);
-	LOG_DBG("");
-
-	cipher_free_session(dev, &ini);
-out:
-	cipher_free_session(dev, &ini);
-}
-
-static ssize_t read_u16(struct bt_conn *conn, const struct bt_gatt_attr *attr, void *buf,
-			uint16_t len, uint16_t offset)
-{
-	const uint16_t *u16 = attr->user_data;
-	uint16_t value = sys_cpu_to_le16(*u16);
-
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, &value, sizeof(value));
 }
 
 /* Environmental Sensing Service Declaration */
@@ -381,25 +140,6 @@ struct humidity_sensor {
 	struct es_measurement meas;
 };
 
-static bool simulate_temp;
-static struct temperature_sensor sensor_1 = {
-	.temp_value = 1200,
-	.lower_limit = -10000,
-	.upper_limit = 10000,
-	.condition = ESS_VALUE_CHANGED,
-	.meas.sampling_func = 0x00,
-	.meas.meas_period = 0x01,
-	.meas.update_interval = SENSOR_1_UPDATE_IVAL,
-	.meas.application = 0x1c,
-	.meas.meas_uncertainty = 0x04,
-};
-
-static void temp_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
-{
-	LOG_DBG("temp_ccc_cfg_changed");
-	simulate_temp = value == BT_GATT_CCC_NOTIFY;
-}
-
 struct read_es_measurement_rp {
 	uint16_t flags; /* Reserved for Future Use */
 	uint8_t sampling_function;
@@ -408,32 +148,6 @@ struct read_es_measurement_rp {
 	uint8_t application;
 	uint8_t measurement_uncertainty;
 } __packed;
-
-static ssize_t read_es_measurement(struct bt_conn *conn, const struct bt_gatt_attr *attr, void *buf,
-				   uint16_t len, uint16_t offset)
-{
-	const struct es_measurement *value = attr->user_data;
-	struct read_es_measurement_rp rsp;
-	LOG_DBG("read measurement");
-	rsp.flags = sys_cpu_to_le16(value->flags);
-	rsp.sampling_function = value->sampling_func;
-	sys_put_le24(value->meas_period, rsp.measurement_period);
-	sys_put_le24(value->update_interval, rsp.update_interval);
-	rsp.application = value->application;
-	rsp.measurement_uncertainty = value->meas_uncertainty;
-
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, &rsp, sizeof(rsp));
-}
-
-static ssize_t read_temp_valid_range(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-				     void *buf, uint16_t len, uint16_t offset)
-{
-	const struct temperature_sensor *sensor = attr->user_data;
-	uint16_t tmp[] = { sys_cpu_to_le16(sensor->lower_limit),
-			   sys_cpu_to_le16(sensor->upper_limit) };
-
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, tmp, sizeof(tmp));
-}
 
 struct es_trigger_setting_seconds {
 	uint8_t condition;
@@ -445,86 +159,6 @@ struct es_trigger_setting_reference {
 	int16_t ref_val;
 } __packed;
 
-static ssize_t read_temp_trigger_setting(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-					 void *buf, uint16_t len, uint16_t offset)
-{
-	const struct temperature_sensor *sensor = attr->user_data;
-
-	switch (sensor->condition) {
-	/* Operand N/A */
-	case ESS_TRIGGER_INACTIVE:
-		__fallthrough;
-	case ESS_VALUE_CHANGED:
-		return bt_gatt_attr_read(conn, attr, buf, len, offset, &sensor->condition,
-					 sizeof(sensor->condition));
-	/* Seconds */
-	case ESS_FIXED_TIME_INTERVAL:
-		__fallthrough;
-	case ESS_NO_LESS_THAN_SPECIFIED_TIME: {
-		struct es_trigger_setting_seconds rp;
-
-		rp.condition = sensor->condition;
-		sys_put_le24(sensor->seconds, rp.sec);
-
-		return bt_gatt_attr_read(conn, attr, buf, len, offset, &rp, sizeof(rp));
-	}
-	/* Reference temperature */
-	default: {
-		struct es_trigger_setting_reference rp;
-
-		rp.condition = sensor->condition;
-		rp.ref_val = sys_cpu_to_le16(sensor->ref_val);
-
-		return bt_gatt_attr_read(conn, attr, buf, len, offset, &rp, sizeof(rp));
-	}
-	}
-}
-
-static bool check_condition(uint8_t condition, int16_t old_val, int16_t new_val, int16_t ref_val)
-{
-	switch (condition) {
-	case ESS_TRIGGER_INACTIVE:
-		return false;
-	case ESS_FIXED_TIME_INTERVAL:
-	case ESS_NO_LESS_THAN_SPECIFIED_TIME:
-		/* TODO: Check time requirements */
-		return false;
-	case ESS_VALUE_CHANGED:
-		return new_val != old_val;
-	case ESS_LESS_THAN_REF_VALUE:
-		return new_val < ref_val;
-	case ESS_LESS_OR_EQUAL_TO_REF_VALUE:
-		return new_val <= ref_val;
-	case ESS_GREATER_THAN_REF_VALUE:
-		return new_val > ref_val;
-	case ESS_GREATER_OR_EQUAL_TO_REF_VALUE:
-		return new_val >= ref_val;
-	case ESS_EQUAL_TO_REF_VALUE:
-		return new_val == ref_val;
-	case ESS_NOT_EQUAL_TO_REF_VALUE:
-		return new_val != ref_val;
-	default:
-		return false;
-	}
-}
-
-BT_GATT_SERVICE_DEFINE(ess_svc, BT_GATT_PRIMARY_SERVICE(BT_UUID_ESS),
-
-		       /* Temperature Sensor 1 */
-		       BT_GATT_CHARACTERISTIC(BT_UUID_TEMPERATURE,
-					      BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
-					      BT_GATT_PERM_READ_ENCRYPT, read_u16, NULL,
-					      &sensor_1.temp_value),
-		       BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ_ENCRYPT,
-					  read_es_measurement, NULL, &sensor_1.meas),
-		       BT_GATT_CUD(SENSOR_1_NAME, BT_GATT_PERM_READ),
-		       BT_GATT_DESCRIPTOR(BT_UUID_VALID_RANGE, BT_GATT_PERM_READ,
-					  read_temp_valid_range, NULL, &sensor_1),
-		       BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING, BT_GATT_PERM_READ,
-					  read_temp_trigger_setting, NULL, &sensor_1),
-		       BT_GATT_CCC(temp_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), 
-);
-
 static uint8_t notify_func(struct bt_conn *conn,
 			   struct bt_gatt_subscribe_params *params,
 			   const void *data, uint16_t length)
@@ -534,9 +168,12 @@ static uint8_t notify_func(struct bt_conn *conn,
 		params->value_handle = 0U;
 		return BT_GATT_ITER_STOP;
 	}
+	// bt_gatt_read(conn, struct bt_gatt_read_params *params);
 
 	LOG_DBG("[NOTIFICATION] data %p length %u", data, length);
-
+	uint16_t tem = sys_get_le24(&((uint16_t *)data)[1]);
+	LOG_DBG("Temperature %d C, param:  %d C", tem, params->value); 
+	
 	return BT_GATT_ITER_CONTINUE;
 }
 
@@ -545,40 +182,41 @@ static uint8_t discover_func(struct bt_conn *conn,
 			     struct bt_gatt_discover_params *params)
 {
 	int err;
-
 	if (!attr) {
 		LOG_DBG("Discover complete");
-		(void)memset(params, 0, sizeof(*params));
+		// (void)memset(params, 0, sizeof(*params));
 		return BT_GATT_ITER_STOP;
 	}
 
 	LOG_DBG("[ATTRIBUTE] handle %u", attr->handle);
 
-	if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_ESS)) {
-		LOG_DBG("ess");
+	if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_ESS)) { 
 		memcpy(&uuid, BT_UUID_TEMPERATURE, sizeof(uuid));
 		discover_params.uuid = &uuid.uuid;
 		discover_params.start_handle = attr->handle + 1;
 		discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
+		
+		// tem_params.func = read_u16;
 
+		LOG_DBG("gatt_discover tmp");
 		err = bt_gatt_discover(conn, &discover_params);
 		if (err) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
-	} else if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_TEMPERATURE)) {
-		LOG_DBG("tmp");
+	} else if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_TEMPERATURE)) { 
 		memcpy(&uuid, BT_UUID_GATT_CCC, sizeof(uuid));
 		discover_params.uuid = &uuid.uuid;
 		discover_params.start_handle = attr->handle + 2;
 		discover_params.type = BT_GATT_DISCOVER_DESCRIPTOR;
 		subscribe_params.value_handle = bt_gatt_attr_value_handle(attr);
 
+		LOG_DBG("gatt_discover ccc");
 		err = bt_gatt_discover(conn, &discover_params);
 		if (err) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
-	} else {
-		LOG_DBG("ccc");
+	} else if(!bt_uuid_cmp(discover_params.uuid, BT_UUID_GATT_CCC)){
+		LOG_DBG("GATT_CCC");
 		subscribe_params.notify = notify_func;
 		subscribe_params.value = BT_GATT_CCC_NOTIFY;
 		subscribe_params.ccc_handle = attr->handle;
@@ -613,6 +251,7 @@ static bool eir_found(struct bt_data *data, void *user_data)
 		}
 		
 		for (i = 0; i < data->data_len; i += sizeof(uint16_t)) {
+			LOG_DBG("i: %d, step: %d",i, sizeof(uint16_t));
 			struct bt_le_conn_param *param;
 			struct bt_uuid *uuid;
 			uint16_t u16;
@@ -640,19 +279,7 @@ static bool eir_found(struct bt_data *data, void *user_data)
 				LOG_DBG("Create conn failed (err %d)", err);
 				start_scan();
 			}
-			bt_set_bondable(true);
-			LOG_DBG("pairing");
-			err = bt_conn_auth_pairing_confirm(default_conn);
-			if (err) {
-				LOG_DBG("pairing failed (err %d)", err);
-				start_scan();
-			}
-			LOG_DBG("passkey");
-			err = bt_conn_auth_passkey_entry(default_conn, 0);
-			if (err) {
-				LOG_DBG("Auth passkey failed (err %d)", err);
-				start_scan();
-			}
+			LOG_DBG("connnected");
 
 			return false;
 		}
@@ -680,7 +307,6 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 static void start_scan(void)
 {
 	int err;
-
 	/* Use active scanning and disable duplicate filtering to handle any
 	 * devices that might update their advertising data at runtime. */
 	struct bt_le_scan_param scan_param = {
@@ -691,6 +317,7 @@ static void start_scan(void)
 	};
 
 	err = bt_le_scan_start(&scan_param, device_found);
+	// bt_scan_cb_register
 	if (err) {
 		LOG_DBG("Scanning failed to start (err %d)", err);
 		return;
@@ -713,22 +340,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		start_scan();
 		return;
 	}
-	LOG_DBG("Try to Connect: %s", addr);
 
-	if (conn == default_conn) {
-		memcpy(&uuid, BT_UUID_ESS, sizeof(uuid));
-		discover_params.uuid = &uuid.uuid;
-		discover_params.func = discover_func;
-		discover_params.start_handle = BT_ATT_FIRST_ATTTRIBUTE_HANDLE;
-		discover_params.end_handle = BT_ATT_LAST_ATTTRIBUTE_HANDLE;
-		discover_params.type = BT_GATT_DISCOVER_PRIMARY;
-
-		err = bt_gatt_discover(default_conn, &discover_params);
-		if (err) {
-			LOG_DBG("Discover failed(err %d)", err);
-			return;
-		}
-	}
+	LOG_DBG("Connected: %s", addr);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -738,18 +351,6 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	LOG_DBG("Disconnected from %s (reason 0x%02x)", addr, reason);
-}
-
-static void identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
-			      const bt_addr_le_t *identity)
-{
-	char addr_identity[BT_ADDR_LE_STR_LEN];
-	char addr_rpa[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(identity, addr_identity, sizeof(addr_identity));
-	bt_addr_le_to_str(rpa, addr_rpa, sizeof(addr_rpa));
-
-	LOG_DBG("Identity resolved %s -> %s", addr_rpa, addr_identity);
 }
 
 static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
@@ -766,23 +367,31 @@ static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_
 	} else {
 		LOG_DBG("Security failed: %s level %u err %d", addr, level, err);
 	}
+
+	if (conn == default_conn) {
+		memcpy(&uuid, BT_UUID_ESS, sizeof(uuid));
+		discover_params.uuid = &uuid.uuid;
+		discover_params.func = discover_func;
+		discover_params.start_handle = BT_ATT_FIRST_ATTTRIBUTE_HANDLE;
+		discover_params.end_handle = BT_ATT_LAST_ATTTRIBUTE_HANDLE;
+		discover_params.type = BT_GATT_DISCOVER_PRIMARY;
+
+		LOG_DBG("gatt_discover BT_UUID_ESS");
+		err = bt_gatt_discover(default_conn, &discover_params);
+		LOG_DBG("gatt_discovered");
+		if (err) {
+			LOG_DBG("Discover failed(err %d)", err);
+			return;
+		}
+	}
 }
 
 static struct bt_conn_cb conn_callbacks = {
 	.connected = connected,
 	.disconnected = disconnected,
-	.identity_resolved = identity_resolved,
+	.identity_resolved = NULL,
 	.security_changed = security_changed,
 };
-
-static void auth_passkey_display(struct bt_conn *conn, unsigned int passkey)
-{
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	LOG_DBG("Passkey for %s: %06u", addr, passkey);
-}
 
 static void auth_cancel(struct bt_conn *conn)
 {
@@ -795,9 +404,13 @@ static void auth_cancel(struct bt_conn *conn)
 
 static void pairing_complete(struct bt_conn *conn, bool bonded)
 {
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	LOG_DBG("Pairing Complete to addr: %s", addr);
 	LOG_DBG("enc_key: %d", bt_conn_enc_key_size(conn));
 	LOG_DBG("security_level: %d", bt_conn_get_security(conn));
-	LOG_DBG("Pairing Complete");
 }
 
 static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
@@ -806,14 +419,20 @@ static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 	bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
 }
 
-static void pairing_confirm(struct bt_conn *conn, unsigned int passkey)
-{
-	LOG_DBG("User passkey (%d).", passkey);
-}
-
 static void passkey_entry(struct bt_conn *conn)
 {
-	LOG_DBG("User enter passkey");
+	LOG_DBG("Peripheral passkey confirm finished");
+	int err = 0;
+	err = bt_conn_auth_passkey_entry(conn, 0);
+	if (err) { 
+		LOG_DBG("Auth passkey failed (err %d)", err); 
+	}
+
+	// LOG_DBG("pairing");
+	// err = bt_conn_auth_pairing_confirm(conn);
+	// if (err) { 
+	// 	LOG_DBG("pairing failed (err %d)", err); 
+	// }
 }
 
 static struct bt_conn_auth_cb auth_cb = {
@@ -822,24 +441,12 @@ static struct bt_conn_auth_cb auth_cb = {
 	.cancel = auth_cancel,
 	.pairing_complete = pairing_complete,
 	.pairing_failed = pairing_failed,
-	.pairing_confirm = pairing_confirm,
+	.pairing_confirm = NULL,
 };
 
 void main(void)
 {
 	int err;
-	// const struct device *dev = device_get_binding(CRYPTO_DRV_NAME);
-	// if (!dev) {
-	// 	LOG_ERR("%s pseudo device not found", CRYPTO_DRV_NAME);
-	// 	return;
-	// }
-
-	// if (validate_hw_compatibility(dev)) {
-	// 	LOG_ERR("Incompatible h/w");
-	// 	return;
-	// }
-	// ccm_mode(dev);
-	// LOG_DBG("..............");
 
 	err = bt_enable(NULL);
 	if (err) {
@@ -849,14 +456,14 @@ void main(void)
 
 	LOG_DBG("Bluetooth initialized");
 
-	// bt_passkey_set(0);
 	bt_conn_auth_cb_register(&auth_cb);
 	bt_conn_cb_register(&conn_callbacks);
 
 	start_scan();
 
 	// while (1) {
-	// 	k_sleep(K_SECONDS(1));
+	// 	LOG_DBG("ALL FINISHED!!!!");
+	// 	k_sleep(K_SECONDS(10));
 
 		
 	// 	/* Temperature simulation */

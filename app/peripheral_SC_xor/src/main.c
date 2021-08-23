@@ -561,20 +561,30 @@ static void update_temperature(const struct device *dev, struct bt_conn *conn, c
 
 BT_GATT_SERVICE_DEFINE(ess_svc, 
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_ESS),
-	/* Temperature Sensor 1 */
 	BT_GATT_CHARACTERISTIC(BT_UUID_TEMPERATURE,
 				BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
 				BT_GATT_PERM_READ, read_u16, NULL,
 				&sensor_1.temp_value),
-	// BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ,
-	// 		read_es_measurement, NULL, &sensor_1.meas),
+	BT_GATT_DESCRIPTOR(BT_UUID_ES_MEASUREMENT, BT_GATT_PERM_READ,
+			read_es_measurement, NULL, &sensor_1.meas),
 	BT_GATT_CUD(SENSOR_1_NAME, BT_GATT_PERM_READ),
-	// BT_GATT_DESCRIPTOR(BT_UUID_VALID_RANGE, BT_GATT_PERM_READ,
-	// 		read_temp_valid_range, NULL, &sensor_1),
-	// BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING, BT_GATT_PERM_READ,
-	// 		read_temp_trigger_setting, NULL, &sensor_1),
+	BT_GATT_DESCRIPTOR(BT_UUID_VALID_RANGE, BT_GATT_PERM_READ,
+			read_temp_valid_range, NULL, &sensor_1),
+	BT_GATT_DESCRIPTOR(BT_UUID_ES_TRIGGER_SETTING, BT_GATT_PERM_READ,
+			read_temp_trigger_setting, NULL, &sensor_1),
 	BT_GATT_CCC(temp_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), 
 );
+	
+// /* Health Thermometer Service Declaration */
+// BT_GATT_SERVICE_DEFINE(hts_svc,
+// 	BT_GATT_PRIMARY_SERVICE(BT_UUID_HTS),
+// 	BT_GATT_CHARACTERISTIC(BT_UUID_HTS_MEASUREMENT, BT_GATT_CHRC_INDICATE,
+// 			       BT_GATT_PERM_NONE, NULL, NULL, NULL),
+// 	BT_GATT_CCC(htmc_ccc_cfg_changed,
+// 		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+// 	/* more optional Characteristics */
+// );
+
 
 static void ess_simulate(const struct device *dev)
 {
@@ -595,10 +605,9 @@ static void ess_simulate(const struct device *dev)
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-	// BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x00, 0x03),
+	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0x00, 0x03),
 	BT_DATA_BYTES(BT_DATA_UUID16_ALL, 
 	BT_UUID_16_ENCODE(BT_UUID_ESS_VAL),
-	BT_UUID_16_ENCODE(BT_UUID_TEMPERATURE_VAL),
 	),
 };
 
@@ -614,6 +623,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	}
 
 	LOG_DBG("Connected %s", addr);
+	LOG_DBG("SET security");
 	if (bt_conn_set_security(conn, BT_SECURITY_L4)) {
 		LOG_DBG("Failed to set security");
 	}
@@ -626,6 +636,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	LOG_DBG("Disconnected from %s (reason 0x%02x)", addr, reason);
+	LOG_DBG("++++++++++++++++++++++++++++++++++++++++++++++++++++");
 }
 
 static void identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
@@ -646,6 +657,7 @@ static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
+	LOG_DBG("security_changed");
 	if (!err) {
 		LOG_DBG("Security changed: %s level %u", addr, level);
 		LOG_DBG(" -enc_key: %d", bt_conn_enc_key_size(conn));
@@ -716,8 +728,8 @@ void main(void)
 		LOG_ERR("Incompatible h/w");
 		return;
 	}
-	ccm_mode(dev);
-	LOG_DBG("..............");
+	// ccm_mode(dev);
+	// LOG_DBG("..............");
 
 	err = bt_enable(NULL);
 	if (err) {
