@@ -410,6 +410,7 @@ static uint8_t get_pair_method(struct bt_smp *smp, uint8_t remote_io)
 
 static enum bt_security_err security_err_get(uint8_t smp_err)
 {
+	BT_INFO("SMP ERR");
 	switch (smp_err) {
 	case BT_SMP_ERR_PASSKEY_ENTRY_FAILED:
 	case BT_SMP_ERR_DHKEY_CHECK_FAILED:
@@ -1616,7 +1617,7 @@ static int bt_smp_br_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 
 	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	BT_DBG("Received SMP code 0x%02x len %u", hdr->code, buf->len);
-
+	
 	/*
 	 * If SMP timeout occurred "no further SMP commands shall be sent over
 	 * the L2CAP Security Manager Channel. A new SM procedure shall only be
@@ -4144,6 +4145,7 @@ static uint8_t smp_security_request(struct bt_smp *smp, struct net_buf *buf)
 
 static uint8_t generate_dhkey(struct bt_smp *smp)
 {
+	BT_DBG("generate_dhkey");
 	if (IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)) {
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
@@ -4158,6 +4160,7 @@ static uint8_t generate_dhkey(struct bt_smp *smp)
 
 static uint8_t display_passkey(struct bt_smp *smp)
 {
+	BT_DBG("display_passkey");
 	if (IS_ENABLED(CONFIG_BT_FIXED_PASSKEY) &&
 	    fixed_passkey != BT_PASSKEY_INVALID) {
 		smp->passkey = fixed_passkey;
@@ -4242,7 +4245,7 @@ static uint8_t smp_public_key(struct bt_smp *smp, struct net_buf *buf)
 	struct bt_smp_public_key *req = (void *)buf->data;
 	uint8_t err;
 
-	BT_DBG("");
+	BT_DBG("smp_public_key");
 
 	memcpy(smp->pkey, req->x, 32);
 	memcpy(&smp->pkey[32], req->y, 32);
@@ -4354,7 +4357,7 @@ static uint8_t smp_dhkey_check(struct bt_smp *smp, struct net_buf *buf)
 {
 	struct bt_smp_dhkey_check *req = (void *)buf->data;
 
-	BT_DBG("");
+	BT_DBG("smp_dhkey_check");
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
 	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
@@ -4488,7 +4491,6 @@ static int bt_smp_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 
 	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	BT_DBG("Received SMP code 0x%02x len %u", hdr->code, buf->len);
-
 	/*
 	 * If SMP timeout occurred "no further SMP commands shall be sent over
 	 * the L2CAP Security Manager Channel. A new SM procedure shall only be

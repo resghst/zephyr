@@ -168,15 +168,12 @@ static uint8_t notify_func(struct bt_conn *conn,
 		params->value_handle = 0U;
 		return BT_GATT_ITER_STOP;
 	}
-	// bt_gatt_read(conn, struct bt_gatt_read_params *params);
-
-	LOG_DBG("[NOTIFICATION] data %p length %u", data, length);
-	uint16_t tem = sys_get_le24(&((uint16_t *)data)[1]);
-	LOG_DBG("Temperature %d C, param:  %d C", tem, params->value); 
-	
+	LOG_DBG("[NOTIFICATION] data %p length %u Temperature %d C", \
+		data, length, ((uint16_t *)data)[0]);
 	return BT_GATT_ITER_CONTINUE;
 }
 
+int flagccc=0;
 static uint8_t discover_func(struct bt_conn *conn,
 			     const struct bt_gatt_attr *attr,
 			     struct bt_gatt_discover_params *params)
@@ -195,9 +192,6 @@ static uint8_t discover_func(struct bt_conn *conn,
 		discover_params.uuid = &uuid.uuid;
 		discover_params.start_handle = attr->handle + 1;
 		discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
-		
-		// tem_params.func = read_u16;
-
 		LOG_DBG("gatt_discover tmp");
 		err = bt_gatt_discover(conn, &discover_params);
 		if (err) {
@@ -209,14 +203,14 @@ static uint8_t discover_func(struct bt_conn *conn,
 		discover_params.start_handle = attr->handle + 2;
 		discover_params.type = BT_GATT_DISCOVER_DESCRIPTOR;
 		subscribe_params.value_handle = bt_gatt_attr_value_handle(attr);
-
 		LOG_DBG("gatt_discover ccc");
 		err = bt_gatt_discover(conn, &discover_params);
 		if (err) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
-	} else if(!bt_uuid_cmp(discover_params.uuid, BT_UUID_GATT_CCC)){
+	} else if(!bt_uuid_cmp(discover_params.uuid, BT_UUID_GATT_CCC) && !flagccc){
 		LOG_DBG("GATT_CCC");
+		flagccc=1;
 		subscribe_params.notify = notify_func;
 		subscribe_params.value = BT_GATT_CCC_NOTIFY;
 		subscribe_params.ccc_handle = attr->handle;
@@ -460,19 +454,4 @@ void main(void)
 	bt_conn_cb_register(&conn_callbacks);
 
 	start_scan();
-
-	// while (1) {
-	// 	LOG_DBG("ALL FINISHED!!!!");
-	// 	k_sleep(K_SECONDS(10));
-
-		
-	// 	/* Temperature simulation */
-	// 	if (simulate_temp) {
-	// 		// LOG_DBG("start porting %d .....",simulate_temp);
-	// 		ess_simulate(dev);
-	// 	}
-
-	// 	// /* Battery level simulation */
-	// 	// bas_notify();
-	// }
 }
