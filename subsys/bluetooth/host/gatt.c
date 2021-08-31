@@ -2062,7 +2062,7 @@ static int gatt_req_send(struct bt_conn *conn, bt_att_func_t func, void *params,
 	if (err) {
 		bt_att_req_free(req);
 	}
-
+	
 	return err;
 }
 #endif
@@ -3742,6 +3742,7 @@ int bt_gatt_discover(struct bt_conn *conn,
 	case BT_GATT_DISCOVER_PRIMARY:
 	case BT_GATT_DISCOVER_SECONDARY:
 		if (params->uuid) {
+			LOG_DBG("PRIMARY");
 			return gatt_find_type(conn, params);
 		}
 		return gatt_read_group(conn, params);
@@ -3757,8 +3758,10 @@ int bt_gatt_discover(struct bt_conn *conn,
 		__fallthrough;
 	case BT_GATT_DISCOVER_INCLUDE:
 	case BT_GATT_DISCOVER_CHARACTERISTIC:
+		BT_DBG("CHARACTERISTIC");
 		return gatt_read_type(conn, params);
 	case BT_GATT_DISCOVER_DESCRIPTOR:
+		BT_DBG("DISCOVER_DESCRIPTOR");
 		/* Only descriptors can be filtered */
 		if (params->uuid &&
 		    (!bt_uuid_cmp(params->uuid, BT_UUID_GATT_PRIMARY) ||

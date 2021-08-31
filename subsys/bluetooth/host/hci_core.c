@@ -3299,6 +3299,7 @@ int bt_send(struct net_buf *buf)
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	if (IS_ENABLED(CONFIG_BT_TINYCRYPT_ECC)) {
+		BT_DBG("================================");
 		return bt_hci_ecc_send(buf);
 	}
 

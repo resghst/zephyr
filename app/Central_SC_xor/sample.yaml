@@ -1,8 +1,8 @@
 sample:
-  description: TBD
-  name: TBD
+  description: TBDC
+  name: TBDC
 tests:
-  sample.bluetooth.peripheral_sc_only:
+  sample.bluetooth.peripheral_sc_xoe:
     harness: bluetooth
     platform_allow: qemu_cortex_m3 qemu_x86 nrf52840dk_nrf52840
     tags: bluetooth
