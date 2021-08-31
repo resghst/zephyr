@@ -541,7 +541,7 @@ static void update_temperature(const struct device *dev, struct bt_conn *conn, c
 	if (notify) {
 		value = sensor->temp_value;
 
-		LOG_DBG("TEM: %d", value);
+		// LOG_DBG("TEM: %d", value);
 
 		// uint8_t *enc_value;
 		// uint8_t *hex_value={0};
@@ -555,7 +555,7 @@ static void update_temperature(const struct device *dev, struct bt_conn *conn, c
 		// print_buffer_uint8(enc_value, enc_len);
 		// bt_gatt_notify(conn, chrc, &enc_value, sizeof(value));
 
-		bt_gatt_notify(conn, chrc, &value, sizeof(value));
+		// bt_gatt_notify(conn, chrc, &value, sizeof(value));
 	}
 }
 
@@ -574,17 +574,6 @@ BT_GATT_SERVICE_DEFINE(ess_svc,
 			read_temp_trigger_setting, NULL, &sensor_1),
 	BT_GATT_CCC(temp_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE), 
 );
-	
-// /* Health Thermometer Service Declaration */
-// BT_GATT_SERVICE_DEFINE(hts_svc,
-// 	BT_GATT_PRIMARY_SERVICE(BT_UUID_HTS),
-// 	BT_GATT_CHARACTERISTIC(BT_UUID_HTS_MEASUREMENT, BT_GATT_CHRC_INDICATE,
-// 			       BT_GATT_PERM_NONE, NULL, NULL, NULL),
-// 	BT_GATT_CCC(htmc_ccc_cfg_changed,
-// 		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
-// 	/* more optional Characteristics */
-// );
-
 
 static void ess_simulate(const struct device *dev)
 {
