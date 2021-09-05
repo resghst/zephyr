@@ -1000,6 +1000,8 @@ struct bt_hci_cp_le_start_encryption {
 	uint64_t rand;
 	uint16_t ediv;
 	uint8_t  ltk[16];
+	//================================
+	uint8_t  xor[16];
 } __packed;
 
 #define BT_HCI_OP_LE_LTK_REQ_REPLY              BT_OP(BT_OGF_LE, 0x001a)
@@ -1992,6 +1994,17 @@ struct bt_hci_rp_le_read_iso_link_quality {
 	uint32_t crc_error_packets;
 	uint32_t rx_unreceived_packets;
 	uint32_t duplicate_packets;
+} __packed;
+
+//=========================================
+#define BT_HCI_OP_LE_ENCRYPT_XOR                BT_OP(BT_OGF_LE, 0x0080)
+struct bt_hci_cp_le_encrypt_xor {
+	uint8_t  key[16];
+	uint8_t  plaintext[16];
+} __packed;
+struct bt_hci_rp_le_encrypt_xor {
+	uint8_t  status;
+	uint8_t  enc_data[16];
 } __packed;
 
 /* Event definitions */

@@ -45,6 +45,7 @@ struct bt_smp_hdr {
 #define BT_SMP_DIST_ID_KEY			0x02
 #define BT_SMP_DIST_SIGN			0x04
 #define BT_SMP_DIST_LINK_KEY			0x08
+#define BT_SMP_DIST_XOR_KEY			0x10
 
 #define BT_SMP_DIST_MASK			0x0f
 

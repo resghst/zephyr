@@ -216,6 +216,7 @@ struct ll_conn {
 		uint8_t ediv[2];
 		uint8_t rand[8];
 		uint8_t ltk[16];
+		uint8_t xor[16];
 	} llcp_enc;
 #endif /* CONFIG_BT_CTLR_LE_ENC */
 

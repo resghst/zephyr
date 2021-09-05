@@ -1448,7 +1448,7 @@ static uint8_t smp_br_ident_info(struct bt_smp_br *smp, struct net_buf *buf)
 	struct bt_keys *keys;
 	bt_addr_le_t addr;
 
-	BT_DBG("");
+	BT_DBG("smp_br_ident_info");
 
 	/* TODO should we resolve LE address if matching RPA is connected? */
 
@@ -2200,6 +2200,32 @@ static uint8_t bt_smp_distribute_keys(struct bt_smp *smp)
 		legacy_distribute_keys(smp);
 	}
 #endif /* !CONFIG_BT_SMP_SC_PAIR_ONLY */
+
+	if (smp->local_dist & BT_SMP_DIST_XOR_KEY) {
+		struct bt_smp_encrypt_xor_info *xorkey_info;
+		struct {
+			uint8_t val[16];
+		} rand_xork;
+		// struct bt_smp_ident_info *id_info;
+		struct net_buf *buf;
+
+		if (bt_rand((void *)&rand_xork, sizeof(rand_xork))) {
+			BT_ERR("Unable to get random bytes for XORKEY");
+			return BT_SMP_ERR_UNSPECIFIED;
+		}
+
+		buf = smp_create_pdu(smp, BT_SMP_CMD_ENCRYPT_XOR_INFO,
+				     sizeof(*xorkey_info));
+		if (!buf) {
+			BT_ERR("Unable to allocate Encrypt XORKEY Info bufferr");
+			return BT_SMP_ERR_UNSPECIFIED;
+		}
+
+		xorkey_info = net_buf_add(buf, sizeof(*xorkey_info));
+		memcpy(xorkey_info->xor_key, rand_xork.val, sizeof(xorkey_info->xor_key));
+
+		smp_send(smp, buf, NULL, NULL); // smp_send(smp, buf, NULL, NULL);
+	}
 
 #if defined(CONFIG_BT_PRIVACY)
 	if (smp->local_dist & BT_SMP_DIST_ID_KEY) {
