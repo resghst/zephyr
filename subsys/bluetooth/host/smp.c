@@ -410,6 +410,7 @@ static uint8_t get_pair_method(struct bt_smp *smp, uint8_t remote_io)
 
 static enum bt_security_err security_err_get(uint8_t smp_err)
 {
+	BT_INFO("SMP ERR");
 	switch (smp_err) {
 	case BT_SMP_ERR_PASSKEY_ENTRY_FAILED:
 	case BT_SMP_ERR_DHKEY_CHECK_FAILED:
@@ -1447,7 +1448,7 @@ static uint8_t smp_br_ident_info(struct bt_smp_br *smp, struct net_buf *buf)
 	struct bt_keys *keys;
 	bt_addr_le_t addr;
 
-	BT_DBG("");
+	BT_DBG("smp_br_ident_info");
 
 	/* TODO should we resolve LE address if matching RPA is connected? */
 
@@ -1616,7 +1617,7 @@ static int bt_smp_br_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 
 	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	BT_DBG("Received SMP code 0x%02x len %u", hdr->code, buf->len);
-
+	
 	/*
 	 * If SMP timeout occurred "no further SMP commands shall be sent over
 	 * the L2CAP Security Manager Channel. A new SM procedure shall only be
@@ -2089,12 +2090,15 @@ static void smp_ident_sent(struct bt_conn *conn, void *user_data)
 
 static void legacy_distribute_keys(struct bt_smp *smp)
 {
+	BT_DBG("legacy_distribute_keys");
 	struct bt_conn *conn = smp->chan.chan.conn;
 	struct bt_keys *keys = conn->le.keys;
 
 	if (smp->local_dist & BT_SMP_DIST_ENC_KEY) {
 		struct bt_smp_encrypt_info *info;
 		struct bt_smp_master_ident *ident;
+		//=======================================
+		struct bt_smp_encrypt_xor_info *xorkey_info;
 		struct net_buf *buf;
 		/* Use struct to get randomness in single call to bt_rand */
 		struct {
@@ -2102,6 +2106,11 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 			uint8_t rand[8];
 			uint8_t ediv[2];
 		} rand;
+
+		//=======================================
+		struct {
+			uint8_t val[16];
+		} rand_xork;
 
 		if (bt_rand((void *)&rand, sizeof(rand))) {
 			BT_ERR("Unable to get random bytes");
@@ -2137,7 +2146,25 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 		memcpy(ident->rand, rand.rand, sizeof(ident->rand));
 		memcpy(ident->ediv, rand.ediv, sizeof(ident->ediv));
 
+		smp_send(smp, buf, NULL, NULL);
+
+		//=======================================
+		if (bt_rand((void *)&rand_xork, sizeof(rand_xork))) {
+			BT_ERR("Unable to get random bytes for XORKEY");
+			return;
+		}
+
+		buf = smp_create_pdu(smp, BT_SMP_CMD_ENCRYPT_XOR_INFO,
+				     sizeof(*xorkey_info));
+		if (!buf) {
+			BT_ERR("Unable to allocate Encrypt XORKEY Info buffer");
+			return;
+		}
+		xorkey_info = net_buf_add(buf, sizeof(*xorkey_info));
+		memcpy(xorkey_info->xor_key, rand_xork.val, sizeof(xorkey_info->xor_key));
+
 		smp_send(smp, buf, smp_ident_sent, NULL);
+
 
 		if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
 			bt_keys_add_type(keys, BT_KEYS_SLAVE_LTK);
@@ -2148,6 +2175,9 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 			       sizeof(keys->slave_ltk.rand));
 			memcpy(keys->slave_ltk.ediv, rand.ediv,
 			       sizeof(keys->slave_ltk.ediv));
+			//=======================================
+			memcpy(keys->xor_key.val, rand_xork.val,
+			       sizeof(keys->xor_key.val));
 		}
 	}
 }
@@ -2155,6 +2185,7 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 
 static uint8_t bt_smp_distribute_keys(struct bt_smp *smp)
 {
+	BT_DBG("bt_smp_distribute_keys");
 	struct bt_conn *conn = smp->chan.chan.conn;
 	struct bt_keys *keys = conn->le.keys;
 
@@ -2169,6 +2200,32 @@ static uint8_t bt_smp_distribute_keys(struct bt_smp *smp)
 		legacy_distribute_keys(smp);
 	}
 #endif /* !CONFIG_BT_SMP_SC_PAIR_ONLY */
+
+	if (smp->local_dist & BT_SMP_DIST_XOR_KEY) {
+		struct bt_smp_encrypt_xor_info *xorkey_info;
+		struct {
+			uint8_t val[16];
+		} rand_xork;
+		// struct bt_smp_ident_info *id_info;
+		struct net_buf *buf;
+
+		if (bt_rand((void *)&rand_xork, sizeof(rand_xork))) {
+			BT_ERR("Unable to get random bytes for XORKEY");
+			return BT_SMP_ERR_UNSPECIFIED;
+		}
+
+		buf = smp_create_pdu(smp, BT_SMP_CMD_ENCRYPT_XOR_INFO,
+				     sizeof(*xorkey_info));
+		if (!buf) {
+			BT_ERR("Unable to allocate Encrypt XORKEY Info bufferr");
+			return BT_SMP_ERR_UNSPECIFIED;
+		}
+
+		xorkey_info = net_buf_add(buf, sizeof(*xorkey_info));
+		memcpy(xorkey_info->xor_key, rand_xork.val, sizeof(xorkey_info->xor_key));
+
+		smp_send(smp, buf, NULL, NULL); // smp_send(smp, buf, NULL, NULL);
+	}
 
 #if defined(CONFIG_BT_PRIVACY)
 	if (smp->local_dist & BT_SMP_DIST_ID_KEY) {
@@ -2586,7 +2643,7 @@ static void legacy_passkey_entry(struct bt_smp *smp, unsigned int passkey)
 
 static uint8_t smp_encrypt_info(struct bt_smp *smp, struct net_buf *buf)
 {
-	BT_DBG("");
+	BT_DBG("smp_encrypt_info");
 
 	if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
 		struct bt_smp_encrypt_info *req = (void *)buf->data;
@@ -2608,12 +2665,36 @@ static uint8_t smp_encrypt_info(struct bt_smp *smp, struct net_buf *buf)
 	return 0;
 }
 
+static uint8_t smp_encrypt_xor_info(struct bt_smp *smp, struct net_buf *buf)
+{
+	BT_DBG("smp_encrypt_xor_info");
+
+	if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
+		struct bt_smp_encrypt_xor_info *req = (void *)buf->data;
+		struct bt_conn *conn = smp->chan.chan.conn;
+		struct bt_keys *keys;
+
+		keys = bt_keys_get_type(BT_KEYS_XORK, conn->id, &conn->le.dst);
+		if (!keys) {
+			BT_ERR("Unable to get keys for %s",
+			       bt_addr_le_str(&conn->le.dst));
+			return BT_SMP_ERR_UNSPECIFIED;
+		}
+
+		memcpy(keys->xor_key.val, req->xor_key, 16);
+	}
+
+	atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_MASTER_IDENT);
+
+	return 0;
+}
+
 static uint8_t smp_master_ident(struct bt_smp *smp, struct net_buf *buf)
 {
 	struct bt_conn *conn = smp->chan.chan.conn;
 	uint8_t err;
 
-	BT_DBG("");
+	BT_DBG("smp_master_ident");
 
 	if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
 		struct bt_smp_master_ident *req = (void *)buf->data;
@@ -3962,7 +4043,7 @@ static uint8_t smp_signing_info(struct bt_smp *smp, struct net_buf *buf)
 	struct bt_conn *conn = smp->chan.chan.conn;
 	uint8_t err;
 
-	BT_DBG("");
+	BT_DBG("smp_signing_info");
 
 	if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
 		struct bt_smp_signing_info *req = (void *)buf->data;
@@ -4116,6 +4197,7 @@ static uint8_t smp_security_request(struct bt_smp *smp, struct net_buf *buf)
 
 static uint8_t generate_dhkey(struct bt_smp *smp)
 {
+	BT_DBG("generate_dhkey");
 	if (IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)) {
 		return BT_SMP_ERR_UNSPECIFIED;
 	}
@@ -4130,6 +4212,7 @@ static uint8_t generate_dhkey(struct bt_smp *smp)
 
 static uint8_t display_passkey(struct bt_smp *smp)
 {
+	BT_DBG("display_passkey");
 	if (IS_ENABLED(CONFIG_BT_FIXED_PASSKEY) &&
 	    fixed_passkey != BT_PASSKEY_INVALID) {
 		smp->passkey = fixed_passkey;
@@ -4214,7 +4297,7 @@ static uint8_t smp_public_key(struct bt_smp *smp, struct net_buf *buf)
 	struct bt_smp_public_key *req = (void *)buf->data;
 	uint8_t err;
 
-	BT_DBG("");
+	BT_DBG("smp_public_key");
 
 	memcpy(smp->pkey, req->x, 32);
 	memcpy(&smp->pkey[32], req->y, 32);
@@ -4326,7 +4409,7 @@ static uint8_t smp_dhkey_check(struct bt_smp *smp, struct net_buf *buf)
 {
 	struct bt_smp_dhkey_check *req = (void *)buf->data;
 
-	BT_DBG("");
+	BT_DBG("smp_dhkey_check");
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
 	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
@@ -4445,6 +4528,7 @@ static const struct {
 	{ smp_public_key,          sizeof(struct bt_smp_public_key) },
 	{ smp_dhkey_check,         sizeof(struct bt_smp_dhkey_check) },
 	{ smp_keypress_notif,      sizeof(struct bt_smp_keypress_notif) },
+	{ smp_encrypt_xor_info,    sizeof(struct bt_smp_encrypt_xor_info) },
 };
 
 static int bt_smp_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
@@ -4460,7 +4544,6 @@ static int bt_smp_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 
 	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	BT_DBG("Received SMP code 0x%02x len %u", hdr->code, buf->len);
-
 	/*
 	 * If SMP timeout occurred "no further SMP commands shall be sent over
 	 * the L2CAP Security Manager Channel. A new SM procedure shall only be
@@ -4695,6 +4778,7 @@ static void bt_smp_encrypt_change(struct bt_l2cap_chan *chan,
 		k_sleep(K_MSEC(100));
 	}
 
+	BT_DBG("=======================================");
 	if (bt_smp_distribute_keys(smp)) {
 		return;
 	}
@@ -5627,6 +5711,7 @@ int bt_passkey_set(unsigned int passkey)
 
 int bt_smp_start_security(struct bt_conn *conn)
 {
+	BT_DBG("bt_smp_start_security");
 	switch (conn->role) {
 #if defined(CONFIG_BT_CENTRAL)
 	case BT_HCI_ROLE_MASTER:

@@ -1766,6 +1766,17 @@ int bt_conn_le_start_encryption(struct bt_conn *conn, uint8_t rand[8],
 #endif /* CONFIG_BT_SMP */
 
 #if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+void bt_conn_enc_key_info(struct bt_conn *conn){
+	printk("rand: ");
+	int i=0;
+	for(i=0;i<8;i++) {printk("%d", conn->le.keys->ltk.rand[i]);}
+	printk("\nediv: ");
+	for(i=0;i<2;i++) {printk("%d", conn->le.keys->ltk.ediv[i]);}
+	printk("\nval : ");
+	for(i=0;i<16;i++) {printk("%d", conn->le.keys->ltk.val[i]);}
+	printk("\n");
+
+}
 uint8_t bt_conn_enc_key_size(struct bt_conn *conn)
 {
 	if (!conn->encrypt) {

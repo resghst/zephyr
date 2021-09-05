@@ -1264,6 +1264,23 @@ static void le_encrypt(struct net_buf *buf, struct net_buf **evt)
 	memcpy(rp->enc_data, enc_data, 16);
 }
 
+static void le_encrypt_xor(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_encrypt *cmd = (void *)buf->data;
+	struct bt_hci_rp_le_encrypt *rp;
+	uint8_t enc_data[16], i=0;
+	
+	for(i=0; i<16; i++)
+	{
+		enc_data[i] = cmd->key[i] ^ cmd->plaintext[i];
+	}
+
+	rp = hci_cmd_complete(evt, sizeof(*rp));
+
+	rp->status = 0x00;
+	memcpy(rp->enc_data, enc_data, 16);
+}
+
 static void le_rand(struct net_buf *buf, struct net_buf **evt)
 {
 	struct bt_hci_rp_le_rand *rp;
@@ -1733,7 +1750,26 @@ static void le_start_encryption(struct net_buf *buf, struct net_buf **evt)
 	status = ll_enc_req_send(handle,
 				 (uint8_t *)&cmd->rand,
 				 (uint8_t *)&cmd->ediv,
-				 &cmd->ltk[0]);
+				 &cmd->ltk[0],
+				 //==============================
+				 &cmd->xor[0]);
+
+	*evt = cmd_status(status);
+}
+
+static void le_start_encryption_xor(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_start_encryption *cmd = (void *)buf->data;
+	uint16_t handle;
+	uint8_t status;
+
+	handle = sys_le16_to_cpu(cmd->handle);
+	status = ll_enc_req_send(handle,
+				 (uint8_t *)&cmd->rand,
+				 (uint8_t *)&cmd->ediv,
+				 &cmd->ltk[0],
+				 //==============================
+				 &cmd->xor[0]);
 
 	*evt = cmd_status(status);
 }
@@ -3505,6 +3541,10 @@ static int controller_cmd_handle(uint16_t  ocf, struct net_buf *cmd,
 
 	case BT_OCF(BT_HCI_OP_LE_ENCRYPT):
 		le_encrypt(cmd, evt);
+		break;
+
+	case BT_OCF(BT_HCI_OP_LE_ENCRYPT_XOR):
+		le_encrypt_xor(cmd, evt);
 		break;
 
 	case BT_OCF(BT_HCI_OP_LE_RAND):
