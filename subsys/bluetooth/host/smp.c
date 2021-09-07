@@ -62,11 +62,11 @@
 #endif
 
 #define RECV_KEYS (BT_SMP_DIST_ENC_KEY | BT_SMP_DIST_ID_KEY | SIGN_DIST |\
-		   LINK_DIST)
-#define SEND_KEYS (BT_SMP_DIST_ENC_KEY | ID_DIST | SIGN_DIST | LINK_DIST)
+		   LINK_DIST | BT_SMP_DIST_XOR_KEY)
+#define SEND_KEYS (BT_SMP_DIST_ENC_KEY | ID_DIST | SIGN_DIST | LINK_DIST | BT_SMP_DIST_XOR_KEY)
 
-#define RECV_KEYS_SC (RECV_KEYS & ~(BT_SMP_DIST_ENC_KEY))
-#define SEND_KEYS_SC (SEND_KEYS & ~(BT_SMP_DIST_ENC_KEY))
+#define RECV_KEYS_SC (RECV_KEYS & (~(BT_SMP_DIST_ENC_KEY)|~(BT_SMP_DIST_XOR_KEY)) )
+#define SEND_KEYS_SC (SEND_KEYS & (~(BT_SMP_DIST_ENC_KEY)|~(BT_SMP_DIST_XOR_KEY)) )
 
 #define BR_RECV_KEYS_SC (RECV_KEYS & ~(LINK_DIST))
 #define BR_SEND_KEYS_SC (SEND_KEYS & ~(LINK_DIST))
@@ -2202,6 +2202,7 @@ static uint8_t bt_smp_distribute_keys(struct bt_smp *smp)
 #endif /* !CONFIG_BT_SMP_SC_PAIR_ONLY */
 
 	if (smp->local_dist & BT_SMP_DIST_XOR_KEY) {
+		BT_DBG("bt_smp_distribute_keys_Xor");
 		struct bt_smp_encrypt_xor_info *xorkey_info;
 		struct {
 			uint8_t val[16];
@@ -2773,6 +2774,11 @@ static uint8_t smp_encrypt_info(struct bt_smp *smp, struct net_buf *buf)
 	return BT_SMP_ERR_CMD_NOTSUPP;
 }
 
+static uint8_t smp_encrypt_xor_info(struct bt_smp *smp, struct net_buf *buf)
+{
+	return BT_SMP_ERR_CMD_NOTSUPP;
+}
+
 static uint8_t smp_master_ident(struct bt_smp *smp, struct net_buf *buf)
 {
 	return BT_SMP_ERR_CMD_NOTSUPP;
@@ -3061,7 +3067,7 @@ static uint8_t smp_pairing_req(struct bt_smp *smp, struct net_buf *buf)
 	struct bt_smp_pairing *rsp;
 	uint8_t err;
 
-	BT_DBG("");
+	BT_DBG("smp_pairing_req");
 
 	if ((req->max_key_size > BT_SMP_MAX_ENC_KEY_SIZE) ||
 	    (req->max_key_size < BT_SMP_MIN_ENC_KEY_SIZE)) {
@@ -3296,7 +3302,7 @@ static uint8_t smp_pairing_rsp(struct bt_smp *smp, struct net_buf *buf)
 	struct bt_smp_pairing *req = (struct bt_smp_pairing *)&smp->preq[1];
 	uint8_t err;
 
-	BT_DBG("");
+	BT_DBG("smp_pairing_rsp");
 
 	if ((rsp->max_key_size > BT_SMP_MAX_ENC_KEY_SIZE) ||
 	    (rsp->max_key_size < BT_SMP_MIN_ENC_KEY_SIZE)) {
@@ -3394,7 +3400,7 @@ static uint8_t smp_pairing_confirm(struct bt_smp *smp, struct net_buf *buf)
 {
 	struct bt_smp_pairing_confirm *req = (void *)buf->data;
 
-	BT_DBG("");
+	BT_DBG("smp_pairing_confirm");
 
 	atomic_clear_bit(smp->flags, SMP_FLAG_DISPLAY);
 

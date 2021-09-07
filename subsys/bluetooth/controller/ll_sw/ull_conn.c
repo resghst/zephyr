@@ -3017,6 +3017,7 @@ static inline void event_enc_reject_prep(struct ll_conn *conn,
 
 static inline void event_enc_prep(struct ll_conn *conn)
 {
+	BT_INFO("event_enc_prep");
 	struct lll_conn *lll = &conn->lll;
 	struct pdu_data *pdu_ctrl_tx;
 	struct node_tx *tx;
@@ -4430,6 +4431,7 @@ static void enc_req_reused_send(struct ll_conn *conn, struct node_tx **tx)
 #if defined(CONFIG_BT_PERIPHERAL)
 static int enc_rsp_send(struct ll_conn *conn)
 {
+	BT_INFO("enc_rsp_send");
 	struct pdu_data *pdu_ctrl_tx;
 	struct node_tx *tx;
 
@@ -4474,6 +4476,7 @@ static int enc_rsp_send(struct ll_conn *conn)
 static int start_enc_rsp_send(struct ll_conn *conn,
 			      struct pdu_data *pdu_ctrl_tx)
 {
+	BT_INFO("start_enc_rsp_send");
 	struct node_tx *tx = NULL;
 
 	if (!pdu_ctrl_tx) {
