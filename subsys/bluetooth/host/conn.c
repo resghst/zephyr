@@ -1767,14 +1767,16 @@ int bt_conn_le_start_encryption(struct bt_conn *conn, uint8_t rand[8],
 
 #if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
 void bt_conn_enc_key_info(struct bt_conn *conn){
-	printk("rand: ");
-	int i=0;
-	for(i=0;i<8;i++) {printk("%d", conn->le.keys->ltk.rand[i]);}
-	printk("\nediv: ");
-	for(i=0;i<2;i++) {printk("%d", conn->le.keys->ltk.ediv[i]);}
-	printk("\nval : ");
-	for(i=0;i<16;i++) {printk("%d", conn->le.keys->ltk.val[i]);}
-	printk("\n");
+
+	uint8_t	valk[16], rand[8], ediv[2], val[16];
+	memcpy(valk, conn->le.keys->xor_key.val, sizeof(conn->le.keys->xor_key.val));
+	memcpy(rand, conn->le.keys->ltk.rand, sizeof(conn->le.keys->ltk.rand));
+	memcpy(ediv, conn->le.keys->ltk.ediv, sizeof(conn->le.keys->ltk.ediv));
+	memcpy(val, conn->le.keys->ltk.val, sizeof(conn->le.keys->ltk.val));
+	BT_DBG("xor_key %s", bt_hex(valk, 16));
+	BT_DBG("rand %s", bt_hex(rand, 8));
+	BT_DBG("ediv %s", bt_hex(ediv, 2));
+	BT_DBG("val %s", bt_hex(val, 16));
 
 }
 uint8_t bt_conn_enc_key_size(struct bt_conn *conn)
