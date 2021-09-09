@@ -62,11 +62,11 @@
 #endif
 
 #define RECV_KEYS (BT_SMP_DIST_ENC_KEY | BT_SMP_DIST_ID_KEY | SIGN_DIST |\
-		   LINK_DIST)
-#define SEND_KEYS (BT_SMP_DIST_ENC_KEY | ID_DIST | SIGN_DIST | LINK_DIST)
+		   LINK_DIST | BT_SMP_DIST_XOR_KEY)
+#define SEND_KEYS (BT_SMP_DIST_ENC_KEY | ID_DIST | SIGN_DIST | LINK_DIST | BT_SMP_DIST_XOR_KEY)
 
-#define RECV_KEYS_SC (RECV_KEYS & ~(BT_SMP_DIST_ENC_KEY))
-#define SEND_KEYS_SC (SEND_KEYS & ~(BT_SMP_DIST_ENC_KEY))
+#define RECV_KEYS_SC (RECV_KEYS & (~(BT_SMP_DIST_ENC_KEY)|~(BT_SMP_DIST_XOR_KEY)) )
+#define SEND_KEYS_SC (SEND_KEYS & (~(BT_SMP_DIST_ENC_KEY)|~(BT_SMP_DIST_XOR_KEY)) )
 
 #define BR_RECV_KEYS_SC (RECV_KEYS & ~(LINK_DIST))
 #define BR_SEND_KEYS_SC (SEND_KEYS & ~(LINK_DIST))
@@ -132,6 +132,7 @@ enum {
 	SMP_FLAG_BR_CONNECTED,	/* if BR/EDR channel is connected */
 	SMP_FLAG_BR_PAIR,	/* if should start BR/EDR pairing */
 	SMP_FLAG_CT2,		/* if should use H7 for keys derivation */
+	SMP_FLAG_ENC_XOR_PENDING,	/* if waiting for an encryption XOR change event */
 
 	/* Total number of flags - must be at the end */
 	SMP_NUM_FLAGS,
@@ -2183,6 +2184,16 @@ static void legacy_distribute_keys(struct bt_smp *smp)
 }
 #endif /* !CONFIG_BT_SMP_SC_PAIR_ONLY */
 
+static void smp_xor_sent(struct bt_conn *conn, void *user_data)
+{
+	smp_check_complete(conn, BT_SMP_DIST_XOR_KEY);
+}
+
+static void smp_enc_sent(struct bt_conn *conn, void *user_data)
+{
+	smp_check_complete(conn, BT_SMP_DIST_ENC_KEY);
+}
+
 static uint8_t bt_smp_distribute_keys(struct bt_smp *smp)
 {
 	BT_DBG("bt_smp_distribute_keys");
@@ -2201,12 +2212,29 @@ static uint8_t bt_smp_distribute_keys(struct bt_smp *smp)
 	}
 #endif /* !CONFIG_BT_SMP_SC_PAIR_ONLY */
 
+	if (smp->local_dist & BT_SMP_DIST_ENC_KEY) {
+		BT_DBG("LTK");
+		struct bt_smp_encrypt_info *ltk_info;
+		struct net_buf *buf;
+		buf = smp_create_pdu(smp, BT_SMP_CMD_ENCRYPT_INFO,
+				     sizeof(*ltk_info));
+		if (!buf) {
+			BT_ERR("Unable to allocate Encrypt LTK Info bufferr");
+			return BT_SMP_ERR_UNSPECIFIED;
+		}
+
+		ltk_info = net_buf_add(buf, sizeof(*ltk_info));
+		memcpy(keys->ltk.val, ltk_info->ltk, sizeof(keys->ltk.val));
+
+		smp_send(smp, buf, smp_enc_sent, NULL); // smp_send(smp, buf, NULL, NULL);
+	}
+
 	if (smp->local_dist & BT_SMP_DIST_XOR_KEY) {
+		BT_DBG("Xor");
 		struct bt_smp_encrypt_xor_info *xorkey_info;
 		struct {
 			uint8_t val[16];
 		} rand_xork;
-		// struct bt_smp_ident_info *id_info;
 		struct net_buf *buf;
 
 		if (bt_rand((void *)&rand_xork, sizeof(rand_xork))) {
@@ -2224,7 +2252,25 @@ static uint8_t bt_smp_distribute_keys(struct bt_smp *smp)
 		xorkey_info = net_buf_add(buf, sizeof(*xorkey_info));
 		memcpy(xorkey_info->xor_key, rand_xork.val, sizeof(xorkey_info->xor_key));
 
-		smp_send(smp, buf, NULL, NULL); // smp_send(smp, buf, NULL, NULL);
+		smp_send(smp, buf, smp_xor_sent, NULL); // smp_send(smp, buf, NULL, NULL);
+	}
+
+	if (smp->local_dist & BT_SMP_DIST_ENC_KEY) {
+		BT_DBG("EVID Rand");
+		struct bt_smp_master_ident *master_info;
+		struct net_buf *buf;
+		buf = smp_create_pdu(smp, BT_SMP_CMD_MASTER_IDENT,
+				     sizeof(*master_info));
+		if (!buf) {
+			BT_ERR("Unable to allocate Encrypt XORKEY Info bufferr");
+			return BT_SMP_ERR_UNSPECIFIED;
+		}
+
+		master_info = net_buf_add(buf, sizeof(*master_info));
+		memcpy(keys->ltk.ediv, master_info->ediv, sizeof(keys->ltk.ediv));
+		memcpy(keys->ltk.rand, master_info->rand, sizeof(keys->ltk.rand));
+	
+		smp_send(smp, buf, smp_enc_sent, NULL); // smp_send(smp, buf, NULL, NULL);
 	}
 
 #if defined(CONFIG_BT_PRIVACY)
@@ -2660,7 +2706,7 @@ static uint8_t smp_encrypt_info(struct bt_smp *smp, struct net_buf *buf)
 		memcpy(keys->ltk.val, req->ltk, 16);
 	}
 
-	atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_MASTER_IDENT);
+	atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_ENCRYPT_XOR_INFO);
 
 	return 0;
 }
@@ -2684,6 +2730,7 @@ static uint8_t smp_encrypt_xor_info(struct bt_smp *smp, struct net_buf *buf)
 		memcpy(keys->xor_key.val, req->xor_key, 16);
 	}
 
+	smp->remote_dist &= ~BT_SMP_DIST_ENC_KEY;
 	atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_MASTER_IDENT);
 
 	return 0;
@@ -2710,7 +2757,7 @@ static uint8_t smp_master_ident(struct bt_smp *smp, struct net_buf *buf)
 		memcpy(keys->ltk.ediv, req->ediv, sizeof(keys->ltk.ediv));
 		memcpy(keys->ltk.rand, req->rand, sizeof(req->rand));
 
-		smp->remote_dist &= ~BT_SMP_DIST_ENC_KEY;
+		smp->remote_dist &= ~BT_SMP_DIST_XOR_KEY;
 	}
 
 	if (smp->remote_dist & BT_SMP_DIST_ID_KEY) {
@@ -2769,6 +2816,11 @@ static uint8_t legacy_pairing_rsp(struct bt_smp *smp)
 #endif /* CONFIG_BT_CENTRAL */
 #else
 static uint8_t smp_encrypt_info(struct bt_smp *smp, struct net_buf *buf)
+{
+	return BT_SMP_ERR_CMD_NOTSUPP;
+}
+
+static uint8_t smp_encrypt_xor_info(struct bt_smp *smp, struct net_buf *buf)
 {
 	return BT_SMP_ERR_CMD_NOTSUPP;
 }
@@ -2996,7 +3048,7 @@ static int smp_send_security_req(struct bt_conn *conn)
 	struct net_buf *req_buf;
 	int err;
 
-	BT_DBG("");
+	BT_DBG("smp_send_security_req");
 	smp = smp_chan_get(conn);
 	if (!smp) {
 		return -ENOTCONN;
@@ -3061,7 +3113,7 @@ static uint8_t smp_pairing_req(struct bt_smp *smp, struct net_buf *buf)
 	struct bt_smp_pairing *rsp;
 	uint8_t err;
 
-	BT_DBG("");
+	BT_DBG("smp_pairing_req");
 
 	if ((req->max_key_size > BT_SMP_MAX_ENC_KEY_SIZE) ||
 	    (req->max_key_size < BT_SMP_MIN_ENC_KEY_SIZE)) {
@@ -3296,7 +3348,7 @@ static uint8_t smp_pairing_rsp(struct bt_smp *smp, struct net_buf *buf)
 	struct bt_smp_pairing *req = (struct bt_smp_pairing *)&smp->preq[1];
 	uint8_t err;
 
-	BT_DBG("");
+	BT_DBG("smp_pairing_rsp");
 
 	if ((rsp->max_key_size > BT_SMP_MAX_ENC_KEY_SIZE) ||
 	    (rsp->max_key_size < BT_SMP_MIN_ENC_KEY_SIZE)) {
@@ -3394,7 +3446,7 @@ static uint8_t smp_pairing_confirm(struct bt_smp *smp, struct net_buf *buf)
 {
 	struct bt_smp_pairing_confirm *req = (void *)buf->data;
 
-	BT_DBG("");
+	BT_DBG("smp_pairing_confirm");
 
 	atomic_clear_bit(smp->flags, SMP_FLAG_DISPLAY);
 
@@ -3923,7 +3975,7 @@ static uint8_t smp_pairing_failed(struct bt_smp *smp, struct net_buf *buf)
 
 static uint8_t smp_ident_info(struct bt_smp *smp, struct net_buf *buf)
 {
-	BT_DBG("");
+	BT_DBG("smp_ident_info");
 
 	if (atomic_test_bit(smp->flags, SMP_FLAG_BOND)) {
 		struct bt_smp_ident_info *req = (void *)buf->data;
@@ -3947,6 +3999,7 @@ static uint8_t smp_ident_info(struct bt_smp *smp, struct net_buf *buf)
 
 static uint8_t smp_ident_addr_info(struct bt_smp *smp, struct net_buf *buf)
 {
+	BT_DBG("smp_ident_addr_info");
 	struct bt_conn *conn = smp->chan.chan.conn;
 	struct bt_smp_ident_addr_info *req = (void *)buf->data;
 	uint8_t err;
@@ -4063,8 +4116,10 @@ static uint8_t smp_signing_info(struct bt_smp *smp, struct net_buf *buf)
 
 	smp->remote_dist &= ~BT_SMP_DIST_SIGN;
 
+	BT_DBG("remote_dist: %u", smp->remote_dist);
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
 	    conn->role == BT_HCI_ROLE_MASTER && !smp->remote_dist) {
+		BT_DBG("MASTER==============");
 		err = bt_smp_distribute_keys(smp);
 		if (err) {
 			return err;
@@ -4459,7 +4514,8 @@ static uint8_t smp_dhkey_check(struct bt_smp *smp, struct net_buf *buf)
 		}
 
 		atomic_set_bit(smp->flags, SMP_FLAG_ENC_PENDING);
-
+		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_ENCRYPT_INFO);
+		
 		if (IS_ENABLED(CONFIG_BT_SMP_USB_HCI_CTLR_WORKAROUND)) {
 			if (smp->remote_dist & BT_SMP_DIST_ID_KEY) {
 				atomic_set_bit(smp->allowed_cmds,
@@ -4544,6 +4600,7 @@ static int bt_smp_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 
 	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	BT_DBG("Received SMP code 0x%02x len %u", hdr->code, buf->len);
+	BT_DBG("%u", hdr->code);
 	/*
 	 * If SMP timeout occurred "no further SMP commands shall be sent over
 	 * the L2CAP Security Manager Channel. A new SM procedure shall only be
@@ -4588,6 +4645,7 @@ static int bt_smp_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 
 	err = handlers[hdr->code].func(smp, buf);
 	if (err) {
+		BT_WARN("SMERR");
 		smp_error(smp, err);
 	}
 
@@ -4746,6 +4804,8 @@ static void bt_smp_encrypt_change(struct bt_l2cap_chan *chan,
 
 	if (smp->remote_dist & BT_SMP_DIST_ENC_KEY) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_ENCRYPT_INFO);
+	} else if (smp->remote_dist & BT_SMP_DIST_XOR_KEY) {
+		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_ENCRYPT_XOR_INFO);
 	} else if (smp->remote_dist & BT_SMP_DIST_ID_KEY) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_IDENT_INFO);
 	} else if (smp->remote_dist & BT_SMP_DIST_SIGN) {

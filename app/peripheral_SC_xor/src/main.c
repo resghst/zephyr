@@ -651,7 +651,7 @@ static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_
 		LOG_DBG("Security changed: %s level %u", addr, level);
 		LOG_DBG(" -enc_key: %d", bt_conn_enc_key_size(conn));
 		LOG_DBG(" -security_level: %d", bt_conn_get_security(conn));
-		// bt_conn_enc_key_info(conn);
+		bt_conn_enc_key_info(conn);
 	} else {
 		LOG_DBG("Security failed: %s level %u err %d", addr, level, err);
 	}

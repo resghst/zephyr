@@ -590,7 +590,7 @@ uint8_t ll_enc_req_send(uint16_t handle, uint8_t const *const rand,
 {
 	struct ll_conn *conn;
 	struct node_tx *tx;
-
+	BT_INFO("ll_enc_req_send");
 	conn = ll_connected_get(handle);
 	if (!conn) {
 		return BT_HCI_ERR_UNKNOWN_CONN_ID;
