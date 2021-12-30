@@ -45,6 +45,12 @@ config SYSTEM_WORKQUEUE_PRIORITY
 
 if BT_HCI
 
+config BT_PROPOSED_SC
+	int "Maximum number of Broadcast Isochronous Groups (BIGs) to support"
+	default 1
+	help
+	  The proposed method config.
+
 config BT_HCI_RAW
 	bool "RAW HCI access"
 	help

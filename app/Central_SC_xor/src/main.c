@@ -288,8 +288,8 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	char dev[BT_ADDR_LE_STR_LEN];
 
 	bt_addr_le_to_str(addr, dev, sizeof(dev));
-	LOG_DBG("[DEVICE]: %s, AD evt type %u, AD data len %u, RSSI %i",
-	       dev, type, ad->len, rssi);
+	// LOG_DBG("[DEVICE]: %s, AD evt type %u, AD data len %u, RSSI %i",
+	//        dev, type, ad->len, rssi);
 
 	/* We're only interested in connectable events */
 	if (type == BT_GAP_ADV_TYPE_ADV_IND ||

@@ -47,7 +47,7 @@ LOG_MODULE_REGISTER(main);
 #define SENSOR_1_NAME "Temperature Sensor 1"
 
 /* Sensor Internal Update Interval [seconds] */
-#define SENSOR_1_UPDATE_IVAL 5
+#define SENSOR_1_UPDATE_IVAL 500
 
 /* ESS error definitions */
 #define ESS_ERR_WRITE_REJECT 0x80
@@ -541,7 +541,7 @@ static void update_temperature(const struct device *dev, struct bt_conn *conn, c
 	if (notify) {
 		value = sensor->temp_value;
 
-		// LOG_DBG("TEM: %d", value);
+		LOG_DBG("TEM: %d", value);
 
 		// uint8_t *enc_value;
 		// uint8_t *hex_value={0};
@@ -555,7 +555,7 @@ static void update_temperature(const struct device *dev, struct bt_conn *conn, c
 		// print_buffer_uint8(enc_value, enc_len);
 		// bt_gatt_notify(conn, chrc, &enc_value, sizeof(value));
 
-		// bt_gatt_notify(conn, chrc, &value, sizeof(value));
+		bt_gatt_notify(conn, chrc, &value, sizeof(value));
 	}
 }
 
@@ -717,8 +717,6 @@ void main(void)
 		LOG_ERR("Incompatible h/w");
 		return;
 	}
-	// ccm_mode(dev);
-	// LOG_DBG("..............");
 
 	err = bt_enable(NULL);
 	if (err) {

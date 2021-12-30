@@ -55,6 +55,7 @@ struct bt_smp_hdr {
 #define BT_SMP_AUTH_SC				0x08
 #define BT_SMP_AUTH_KEYPRESS			0x10
 #define BT_SMP_AUTH_CT2				0x20
+#define BT_SMP_AUTH_PROPOSED_SC		0xc0
 
 #define BT_SMP_CMD_PAIRING_REQ			0x01
 #define BT_SMP_CMD_PAIRING_RSP			0x02
@@ -65,6 +66,7 @@ struct bt_smp_pairing {
 	uint8_t  max_key_size;
 	uint8_t  init_key_dist;
 	uint8_t  resp_key_dist;
+	uint8_t  ext_passkey;
 } __packed;
 
 #define BT_SMP_CMD_PAIRING_CONFIRM		0x03
@@ -134,7 +136,18 @@ struct bt_smp_encrypt_xor_info {
 	uint8_t  xor_key[16];
 } __packed;
 
-#define BT_SMP_NUM_CMDS                         0x10
+#define BT_SMP_CMD_PROPOSED_PAIRING_RSP			0x10
+struct bt_smp_proposed_pairing {
+	uint8_t  io_capability;
+	uint8_t  oob_flag;
+	uint8_t  auth_req;
+	uint8_t  max_key_size;
+	uint8_t  init_key_dist;
+	uint8_t  resp_key_dist;
+	uint8_t  ext_passkey;
+} __packed;
+
+#define BT_SMP_NUM_CMDS                         0x11
 
 int bt_smp_start_security(struct bt_conn *conn);
 bool bt_smp_request_ltk(struct bt_conn *conn, uint64_t rand, uint16_t ediv,
