@@ -159,6 +159,7 @@ static inline void handle_event(uint8_t event, struct net_buf *buf,
 		if (buf->len < handler->min_len) {
 			BT_ERR("Too small (%u bytes) event 0x%02x",
 			       buf->len, event);
+			BT_ERR("Min length is (%u bytes)", handler->min_len);
 			return;
 		}
 
@@ -2024,6 +2025,7 @@ static void hci_cmd_done(uint16_t opcode, uint8_t status, struct net_buf *buf)
 
 static void hci_cmd_complete(struct net_buf *buf)
 {
+	BT_DBG("hci_cmd_complete");
 	struct bt_hci_evt_cmd_complete *evt;
 	uint8_t status, ncmd;
 	uint16_t opcode;
@@ -2159,6 +2161,12 @@ static const struct event_handler meta_events[] = {
 	EVENT_HANDLER(BT_HCI_EVT_LE_GENERATE_DHKEY_COMPLETE,
 		      bt_hci_evt_le_dhkey_complete,
 		      sizeof(struct bt_hci_evt_le_generate_dhkey_complete)),
+	EVENT_HANDLER(BT_HCI_EVT_LE_ECC_DATA_ENCRYPTION_COMPLETE,
+		      bt_hci_evt_le_ecc_data_encrypt_complete,
+		      sizeof(struct bt_hci_evt_le_ecc_data_encrypt_complete)),
+	EVENT_HANDLER(BT_HCI_EVT_LE_ECC_DATA_DECRYPTION_COMPLETE,
+		      bt_hci_evt_le_ecc_data_decrypt_complete,
+		      sizeof(struct bt_hci_evt_le_ecc_data_decrypt_complete)),
 #endif /* CONFIG_BT_SMP */
 #if defined(CONFIG_BT_EXT_ADV)
 #if defined(CONFIG_BT_BROADCASTER)
@@ -3299,7 +3307,6 @@ int bt_send(struct net_buf *buf)
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	if (IS_ENABLED(CONFIG_BT_TINYCRYPT_ECC)) {
-		BT_DBG("================================");
 		return bt_hci_ecc_send(buf);
 	}
 

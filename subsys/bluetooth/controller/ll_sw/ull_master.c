@@ -584,13 +584,11 @@ uint8_t ll_chm_update(uint8_t const *const chm)
 
 #if defined(CONFIG_BT_CTLR_LE_ENC)
 uint8_t ll_enc_req_send(uint16_t handle, uint8_t const *const rand,
-		     uint8_t const *const ediv, uint8_t const *const ltk,
-			 //==================================
-			 uint8_t const *const xor)
+		     uint8_t const *const ediv, uint8_t const *const ltk)
 {
 	struct ll_conn *conn;
 	struct node_tx *tx;
-	BT_INFO("ll_enc_req_send");
+	// BT_INFO("ll_enc_req_send");
 	conn = ll_connected_get(handle);
 	if (!conn) {
 		return BT_HCI_ERR_UNKNOWN_CONN_ID;
@@ -609,7 +607,6 @@ uint8_t ll_enc_req_send(uint16_t handle, uint8_t const *const rand,
 		pdu_data_tx = (void *)tx->pdu;
 
 		memcpy(&conn->llcp_enc.ltk[0], ltk, sizeof(conn->llcp_enc.ltk));
-		memcpy(&conn->llcp_enc.xor[0], xor, sizeof(conn->llcp_enc.xor));
 
 		if (!conn->lll.enc_rx && !conn->lll.enc_tx) {
 			struct pdu_data_llctrl_enc_req *enc_req;

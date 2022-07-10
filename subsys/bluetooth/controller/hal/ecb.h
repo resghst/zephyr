@@ -23,6 +23,17 @@ void ecb_encrypt_be(uint8_t const *const key_be, uint8_t const *const clear_text
 		    uint8_t * const cipher_text_be);
 void ecb_encrypt(uint8_t const *const key_le, uint8_t const *const clear_text_le,
 		 uint8_t * const cipher_text_le, uint8_t * const cipher_text_be);
+
+void ecb_proposed_encrypt(uint8_t const *const key_le, uint8_t const *const shift_key_le, uint8_t const *const clear_text_le,
+		 uint8_t * const cipher_text_le, uint8_t * const cipher_text_be);
+void ecb_proposed_decrypt(uint8_t const *const key_le, uint8_t const *const shift_key_le, uint8_t const *const cipher_text_le,
+		 uint8_t * const clear_text_le, uint8_t * const cipher_text_be);
+
+void ecb_aes_encrypt(uint8_t const *const key_le, uint8_t const *const clear_text_le,
+		 uint8_t * const cipher_text_le, uint8_t * const cipher_text_be);
+void ecb_aes_decrypt(uint8_t const *const key_le, uint8_t const *const cipher_text_le,
+		 uint8_t * const clear_text_le, uint8_t * const cipher_text_be);
+
 uint32_t ecb_encrypt_nonblocking(struct ecb *ecb);
 void isr_ecb(void *param);
 

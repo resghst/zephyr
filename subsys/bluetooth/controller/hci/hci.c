@@ -22,6 +22,11 @@
 #include <bluetooth/buf.h>
 #include <bluetooth/bluetooth.h>
 
+#include <tinycrypt/constants.h>
+#include <tinycrypt/hmac_prng.h>
+#include <tinycrypt/aes.h>
+#include <tinycrypt/utils.h>
+
 #include "../host/hci_ecc.h"
 
 #include "util/util.h"
@@ -1252,6 +1257,7 @@ static void le_rem_dev_from_wl(struct net_buf *buf, struct net_buf **evt)
 
 static void le_encrypt(struct net_buf *buf, struct net_buf **evt)
 {
+	BT_DBG("le_encrypt");
 	struct bt_hci_cp_le_encrypt *cmd = (void *)buf->data;
 	struct bt_hci_rp_le_encrypt *rp;
 	uint8_t enc_data[16];
@@ -1262,6 +1268,35 @@ static void le_encrypt(struct net_buf *buf, struct net_buf **evt)
 
 	rp->status = 0x00;
 	memcpy(rp->enc_data, enc_data, 16);
+}
+
+static void le_proposed_encrypt(struct net_buf *buf, struct net_buf **evt)
+{
+	BT_DBG("le_proposed_encrypt");
+	struct bt_hci_cp_le_proposed_encrypt *cmd = (void *)buf->data;
+	struct bt_hci_rp_le_proposed_encrypt *rp;
+	uint8_t enc_data[16];
+
+	ecb_proposed_encrypt(cmd->key, cmd->shift_key, cmd->plaintext, enc_data, NULL);
+	rp = hci_cmd_complete(evt, sizeof(*rp));
+
+	rp->status = 0x00;
+	memcpy(rp->enc_data, enc_data, 16);
+}
+
+static void le_proposed_decrypt(struct net_buf *buf, struct net_buf **evt)
+{
+	BT_DBG("le_proposed_decrypt");
+	struct bt_hci_cp_le_proposed_decrypt *cmd = (void *)buf->data;
+	struct bt_hci_rp_le_proposed_decrypt *rp;
+	uint8_t plaintext[16];
+
+	ecb_proposed_decrypt(cmd->key, cmd->shift_key, cmd->enc_data, plaintext, NULL);
+
+	rp = hci_cmd_complete(evt, sizeof(*rp));
+
+	rp->status = 0x00;
+	memcpy(rp->plaintext, plaintext, 16);
 }
 
 static void le_encrypt_xor(struct net_buf *buf, struct net_buf **evt)
@@ -1750,29 +1785,11 @@ static void le_start_encryption(struct net_buf *buf, struct net_buf **evt)
 	status = ll_enc_req_send(handle,
 				 (uint8_t *)&cmd->rand,
 				 (uint8_t *)&cmd->ediv,
-				 &cmd->ltk[0],
-				 //==============================
-				 &cmd->xor[0]);
+				 &cmd->ltk[0]);
 
 	*evt = cmd_status(status);
 }
 
-static void le_start_encryption_xor(struct net_buf *buf, struct net_buf **evt)
-{
-	struct bt_hci_cp_le_start_encryption *cmd = (void *)buf->data;
-	uint16_t handle;
-	uint8_t status;
-
-	handle = sys_le16_to_cpu(cmd->handle);
-	status = ll_enc_req_send(handle,
-				 (uint8_t *)&cmd->rand,
-				 (uint8_t *)&cmd->ediv,
-				 &cmd->ltk[0],
-				 //==============================
-				 &cmd->xor[0]);
-
-	*evt = cmd_status(status);
-}
 #endif /* CONFIG_BT_CTLR_LE_ENC */
 
 #if defined(CONFIG_BT_CTLR_CENTRAL_ISO)
@@ -3541,6 +3558,14 @@ static int controller_cmd_handle(uint16_t  ocf, struct net_buf *cmd,
 
 	case BT_OCF(BT_HCI_OP_LE_ENCRYPT):
 		le_encrypt(cmd, evt);
+		break;
+
+	case BT_OCF(BT_HCI_OP_LE_PROPOSED_AES_ENCRYPT):
+		le_proposed_encrypt(cmd, evt);
+		break;
+
+	case BT_OCF(BT_HCI_OP_LE_PROPOSED_AES_DECRYPT):
+		le_proposed_decrypt(cmd, evt);
 		break;
 
 	case BT_OCF(BT_HCI_OP_LE_ENCRYPT_XOR):

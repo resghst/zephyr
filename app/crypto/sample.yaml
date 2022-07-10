@@ -1,0 +1,8 @@
+sample:
+  description: An example to illustrate the usage of
+    crypto APIs
+  name: Crypto APIs
+common:
+  tags: crypto
+  min_ram: 20
+  arch_exclude: xtensa

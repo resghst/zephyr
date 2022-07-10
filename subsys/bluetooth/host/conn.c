@@ -663,7 +663,7 @@ int bt_conn_prepare_events(struct k_poll_event events[])
 	int i, ev_count = 0;
 	struct bt_conn *conn;
 
-	BT_DBG("");
+	BT_DBG("bt_conn_prepare_events");
 
 	conn_change.signaled = 0U;
 	k_poll_event_init(&events[ev_count++], K_POLL_TYPE_SIGNAL,
@@ -1766,19 +1766,24 @@ int bt_conn_le_start_encryption(struct bt_conn *conn, uint8_t rand[8],
 #endif /* CONFIG_BT_SMP */
 
 #if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
-void bt_conn_enc_key_info(struct bt_conn *conn){
-
-	uint8_t	valk[16], rand[8], ediv[2], val[16];
-	memcpy(valk, conn->le.keys->xor_key.val, sizeof(conn->le.keys->xor_key.val));
-	memcpy(rand, conn->le.keys->ltk.rand, sizeof(conn->le.keys->ltk.rand));
-	memcpy(ediv, conn->le.keys->ltk.ediv, sizeof(conn->le.keys->ltk.ediv));
-	memcpy(val, conn->le.keys->ltk.val, sizeof(conn->le.keys->ltk.val));
-	BT_DBG("xor_key %s", bt_hex(valk, 16));
-	BT_DBG("rand %s", bt_hex(rand, 8));
-	BT_DBG("ediv %s", bt_hex(ediv, 2));
-	BT_DBG("val %s", bt_hex(val, 16));
-
+uint8_t* bt_conn_get_shift_key(struct bt_conn *conn)
+{
+	if (!conn->encrypt) { return 0; }
+	return conn->le.keys->shift_key.val;
 }
+
+uint8_t* bt_conn_get_aes_key(struct bt_conn *conn)
+{
+	if (!conn->encrypt) { return 0; }
+	return conn->le.keys->ltk.val;
+}
+
+uint8_t* bt_conn_get_public_key(struct bt_conn *conn)
+{
+	if (!conn->encrypt) { return 0; }
+	return conn->le.keys->pkey;
+}
+
 uint8_t bt_conn_enc_key_size(struct bt_conn *conn)
 {
 	if (!conn->encrypt) {

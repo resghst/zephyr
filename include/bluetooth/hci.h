@@ -1000,8 +1000,6 @@ struct bt_hci_cp_le_start_encryption {
 	uint64_t rand;
 	uint16_t ediv;
 	uint8_t  ltk[16];
-	//================================
-	uint8_t  xor[16];
 } __packed;
 
 #define BT_HCI_OP_LE_LTK_REQ_REPLY              BT_OP(BT_OGF_LE, 0x001a)
@@ -1997,6 +1995,41 @@ struct bt_hci_rp_le_read_iso_link_quality {
 } __packed;
 
 //=========================================
+#define BT_HCI_OP_LE_ECC_DATA_ENCRYPT                BT_OP(BT_OGF_LE, 0x007b)
+struct bt_hci_cp_le_ecc_data_encrypt {
+	uint8_t  plaintext[32];
+	uint8_t  remote_pk[64];
+} __packed;
+
+#define BT_HCI_OP_LE_ECC_DATA_DECRYPT                BT_OP(BT_OGF_LE, 0x007c)
+struct bt_hci_cp_le_ecc_data_decrypt {
+	uint8_t  C1[32];
+	uint8_t  C2[64];
+} __packed;
+
+#define BT_HCI_OP_LE_PROPOSED_AES_ENCRYPT                    BT_OP(BT_OGF_LE, 0x007d)
+struct bt_hci_cp_le_proposed_encrypt {
+	uint8_t  key[16];
+	uint8_t  shift_key[5];
+	uint8_t  plaintext[16];
+} __packed;
+struct bt_hci_rp_le_proposed_encrypt {
+	uint8_t  status;
+	uint8_t  enc_data[16];
+} __packed;
+
+
+#define BT_HCI_OP_LE_PROPOSED_AES_DECRYPT                    BT_OP(BT_OGF_LE, 0x007e)
+struct bt_hci_cp_le_proposed_decrypt {
+	uint8_t  key[16];
+	uint8_t  shift_key[5];
+	uint8_t  enc_data[16];
+} __packed;
+struct bt_hci_rp_le_proposed_decrypt {
+	uint8_t  status;
+	uint8_t  plaintext[16];
+} __packed;
+
 #define BT_HCI_OP_LE_ENCRYPT_XOR                BT_OP(BT_OGF_LE, 0x0080)
 struct bt_hci_cp_le_encrypt_xor {
 	uint8_t  key[16];
@@ -2006,6 +2039,7 @@ struct bt_hci_rp_le_encrypt_xor {
 	uint8_t  status;
 	uint8_t  enc_data[16];
 } __packed;
+//=========================================
 
 /* Event definitions */
 
@@ -2602,6 +2636,20 @@ struct bt_hci_evt_le_biginfo_adv_report {
 	uint8_t  encryption;
 } __packed;
 
+//=========================================
+#define BT_HCI_EVT_LE_ECC_DATA_ENCRYPTION_COMPLETE  0x23
+struct bt_hci_evt_le_ecc_data_encrypt_complete {
+	uint8_t  status;
+	uint8_t  C1[32];
+	uint8_t  C2[64];
+} __packed;
+
+#define BT_HCI_EVT_LE_ECC_DATA_DECRYPTION_COMPLETE  0x24
+struct bt_hci_evt_le_ecc_data_decrypt_complete {
+	uint8_t  status;
+	uint8_t  plaintext[32];
+} __packed;
+//=========================================
 /* Event mask bits */
 
 #define BT_EVT_BIT(n) (1ULL << (n))

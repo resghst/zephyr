@@ -19,6 +19,8 @@
 static uint8_t pub_key[64];
 static sys_slist_t pub_key_cb_slist;
 static bt_dh_key_cb_t dh_key_cb;
+static bt_ecc_encrypt_cb_t ecc_encrypt_cb;
+static bt_ecc_decrypt_cb_t ecc_decrypt_cb;
 
 static const uint8_t debug_public_key[64] = {
 	/* X */
@@ -219,5 +221,111 @@ void bt_hci_evt_le_dhkey_complete(struct net_buf *buf)
 
 		dh_key_cb = NULL;
 		cb(evt->status ? NULL : evt->dhkey);
+	}
+}
+
+int bt_hci_ecc_data_encrypt(const uint8_t *plaintext, const uint8_t *remote_pk)
+{
+	BT_DBG("bt_hci_ecc_data_encrypt");
+	struct bt_hci_cp_le_ecc_data_encrypt *cp;
+	struct net_buf *buf, *rsp;
+	int ret;
+
+	buf = bt_hci_cmd_create(BT_HCI_OP_LE_ECC_DATA_ENCRYPT, sizeof(*cp));
+	if (!buf) { return -ENOBUFS; }
+	
+	cp = net_buf_add(buf, sizeof(*cp));
+	memcpy(cp->plaintext, plaintext, sizeof(cp->plaintext));
+	memcpy(cp->remote_pk, remote_pk, sizeof(cp->remote_pk));
+	ret = bt_hci_cmd_send_sync(BT_HCI_OP_LE_ECC_DATA_ENCRYPT, buf, &rsp);
+	if(ret){
+		BT_WARN("ECC data encrypt HCI command failed");
+		return ret;
+	}
+
+	return 0;
+}
+
+int bt_hci_ecc_data_decrypt(const uint8_t *C1, const uint8_t *C2)
+{
+	BT_DBG("bt_hci_ecc_data_decrypt");
+	struct bt_hci_cp_le_ecc_data_decrypt *cp;
+	struct net_buf *buf;
+
+	buf = bt_hci_cmd_create(BT_HCI_OP_LE_ECC_DATA_DECRYPT, sizeof(*cp));
+	if (!buf) { return -ENOBUFS; }
+	
+	cp = net_buf_add(buf, sizeof(*cp));
+	memcpy(cp->C1, C1, sizeof(cp->C1));
+	memcpy(cp->C2, C2, sizeof(cp->C2));
+	return bt_hci_cmd_send_sync(BT_HCI_OP_LE_ECC_DATA_DECRYPT, buf, NULL);
+}
+
+int bt_ecc_data_encrypt(const uint8_t *plaintext, const uint8_t *remote_pk, bt_ecc_encrypt_cb_t cb)
+{
+	int err;
+	if (ecc_encrypt_cb == cb) { return -EALREADY; }
+	if (ecc_encrypt_cb || atomic_test_bit(bt_dev.flags, BT_DEV_ECC_ENCRYPT_BUSY)) { return -EBUSY; }
+	// if (!atomic_test_bit(bt_dev.flags, BT_DEV_HAS_ECC_KEY)) { return -EADDRNOTAVAIL; }
+
+	ecc_encrypt_cb = cb;
+	err = bt_hci_ecc_data_encrypt(plaintext, remote_pk);
+	if (err) {
+		ecc_encrypt_cb = NULL;
+		BT_WARN("Failed to encrypt ecc_data (err %d)", err);
+		return err;
+	}
+
+	return 0;
+}
+
+int bt_ecc_data_decrypt(const uint8_t *C1, const uint8_t *C2, bt_ecc_decrypt_cb_t cb)
+{
+	int err;
+
+	if (ecc_decrypt_cb == cb) { return -EALREADY; }
+	if (ecc_decrypt_cb || atomic_test_bit(bt_dev.flags, BT_DEV_ECC_DECRYPT_BUSY)) { return -EBUSY; }
+	// if (!atomic_test_bit(bt_dev.flags, BT_DEV_HAS_ECC_KEY)) { return -EADDRNOTAVAIL; }
+
+	ecc_decrypt_cb = cb;
+	err = bt_hci_ecc_data_decrypt(C1, C2);
+	if (err) {
+		ecc_decrypt_cb = NULL;
+		BT_WARN("Failed to decrypt ecc_data (err %d)", err);
+		return err;
+	}
+
+	return 0;
+}
+
+
+void bt_hci_evt_le_ecc_data_encrypt_complete(struct net_buf *buf)
+{
+	struct bt_hci_evt_le_ecc_data_encrypt_complete *evt = (void *)buf->data;
+
+	BT_DBG("bt_hci_evt_le_ecc_data_encrypt_complete");
+	BT_DBG("status: 0x%02x", evt->status);
+
+	if (ecc_encrypt_cb) {
+		bt_ecc_encrypt_cb_t cb = ecc_encrypt_cb;
+
+		cb(evt->C1, evt->C2);
+		ecc_encrypt_cb = NULL;
+	}
+}
+
+
+void bt_hci_evt_le_ecc_data_decrypt_complete(struct net_buf *buf)
+{
+	struct bt_hci_evt_le_ecc_data_decrypt_complete *evt = (void *)buf->data;
+
+	BT_DBG("bt_hci_evt_le_ecc_data_decrypt_complete");
+	BT_DBG("status: 0x%02x", evt->status);
+
+	if (ecc_decrypt_cb) {
+		bt_ecc_decrypt_cb_t cb = ecc_decrypt_cb;
+
+		cb(evt->plaintext);
+		ecc_decrypt_cb = NULL;
 	}
 }

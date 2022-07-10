@@ -33,6 +33,10 @@ enum {
 	BT_DEV_PRESET_ID,
 	BT_DEV_HAS_PUB_KEY,
 	BT_DEV_PUB_KEY_BUSY,
+	
+	BT_DEV_HAS_ECC_KEY,
+	BT_DEV_ECC_ENCRYPT_BUSY,
+	BT_DEV_ECC_DECRYPT_BUSY,
 
 	BT_DEV_SCANNING,
 	BT_DEV_EXPLICIT_SCAN,
@@ -414,6 +418,10 @@ void bt_hci_auth_complete(struct net_buf *buf);
 /* ECC HCI event handlers */
 void bt_hci_evt_le_pkey_complete(struct net_buf *buf);
 void bt_hci_evt_le_dhkey_complete(struct net_buf *buf);
+
+/* proposed method*/
+void bt_hci_evt_le_ecc_data_encrypt_complete(struct net_buf *buf);
+void bt_hci_evt_le_ecc_data_decrypt_complete(struct net_buf *buf);
 
 /* Common HCI event handlers */
 void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt);

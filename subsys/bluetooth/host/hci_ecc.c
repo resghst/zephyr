@@ -49,6 +49,8 @@ static const uint8_t debug_private_key_be[32] = {
 enum {
 	PENDING_PUB_KEY,
 	PENDING_DHKEY,
+	PENDING_ECC_DATA_ENCRYPT,
+	PENDING_ECC_DATA_DECRYPT,
 
 	USE_DEBUG_KEY,
 
@@ -68,6 +70,9 @@ static struct {
 		uint8_t dhkey_be[32];
 	};
 } ecc;
+
+static struct bt_hci_cp_le_ecc_data_encrypt ecc_encrypt_data;
+static struct bt_hci_cp_le_ecc_data_decrypt ecc_decrypt_data;
 
 static void send_cmd_status(uint16_t opcode, uint8_t status)
 {
@@ -114,8 +119,64 @@ static uint8_t generate_keys(void)
 	if (IS_ENABLED(CONFIG_BT_LOG_SNIFFER_INFO)) {
 		BT_INFO("SC private key 0x%s", bt_hex(ecc.private_key_be, 32));
 	}
+	BT_INFO("SC private key 0x%s", bt_hex(&ecc.private_key_be[0], 32));
+	BT_INFO("SC public  key 0x%s", bt_hex(&ecc.public_key_be[0], 64));
 
 	return 0;
+}
+
+static uint8_t ecc_data_encrypt(uint8_t *m, uint8_t *C1, uint8_t *C2){
+	uint8_t r[32] = {0}, secret[32] = {0};
+	int rc;
+	
+	// caculate C2	
+	rc = uECC_make_key(C2, r, &curve_secp256r1); 
+	if (rc == TC_CRYPTO_FAIL) { 
+		BT_ERR("caculate C2 failed");
+		return rc;
+	}
+	// caculate r*K
+	rc = uECC_shared_secret(ecc_encrypt_data.remote_pk, r, secret, &curve_secp256r1); 
+	if (rc == TC_CRYPTO_FAIL) { 
+		BT_ERR("caculate r*K failed");
+		return rc;
+	}
+	// caculate C1
+	uECC_vli_xor(C1, m, secret, 32); 
+	BT_DBG("ALG");
+	BT_DBG("m\t\t%s", bt_hex(m,32));
+	BT_DBG("r\t\t%s", bt_hex(r,32));
+	BT_DBG("remote_pk\t%s", bt_hex(&ecc_encrypt_data.remote_pk[0], 64));
+	BT_DBG("secret\t%s", bt_hex(secret,32));
+	BT_DBG("C1\t\t%s", bt_hex(C1,32));
+	BT_DBG("C2\t\t%s", bt_hex(C2,64));
+	return rc;
+}
+
+static uint8_t ecc_data_decrypt(uint8_t *M, uint8_t *C1, uint8_t *C2){
+	BT_DBG("ecc_data_decrypt");
+	uint8_t secret[32] = {0};
+	// uint8_t private_key_le[32] = {0};
+	int rc;
+	// sys_memcpy_swap(&private_key_le[0], ecc.private_key_be, sizeof(ecc.private_key_be));	
+	sys_mem_swap(C2, 64);	
+	sys_mem_swap(C1, 32);	
+	// caculate secret	
+	// rc = uECC_shared_secret(C2, &private_key_le[0], secret, &curve_secp256r1); // prv C2
+	rc = uECC_shared_secret(C2, ecc.private_key_be, secret, &curve_secp256r1); // prv C2
+	if (rc == TC_CRYPTO_FAIL) { 
+		BT_ERR("shared_secret() failed (1)\n");
+		return rc;
+	}
+	// caculate M
+	uECC_vli_xor(M, C1, secret, 32); 
+
+	BT_DBG("ALG");
+	BT_DBG("secret\t\t%s", bt_hex(secret, 32));
+	BT_DBG("C1\t\t%s", bt_hex(C1, 32));
+	BT_DBG("C2\t\t%s", bt_hex(C2, 64));
+	BT_DBG("M\t\t%s", bt_hex(M, 32));
+	return rc;
 }
 
 static void emulate_le_p256_public_key_cmd(void)
@@ -126,7 +187,7 @@ static void emulate_le_p256_public_key_cmd(void)
 	struct net_buf *buf;
 	uint8_t status;
 
-	BT_DBG("");
+	BT_DBG("emulate_le_p256_public_key_cmd");
 
 	status = generate_keys();
 
@@ -159,6 +220,7 @@ static void emulate_le_p256_public_key_cmd(void)
 
 static void emulate_le_generate_dhkey(void)
 {
+	BT_DBG("emulate_le_generate_dhkey");
 	struct bt_hci_evt_le_generate_dhkey_complete *evt;
 	struct bt_hci_evt_le_meta_event *meta;
 	struct bt_hci_evt_hdr *hdr;
@@ -173,8 +235,7 @@ static void emulate_le_generate_dhkey(void)
 		bool use_debug = atomic_test_bit(flags, USE_DEBUG_KEY);
 
 		ret = uECC_shared_secret(ecc.public_key_be,
-					 use_debug ? debug_private_key_be :
-						     ecc.private_key_be,
+					 use_debug ? debug_private_key_be : ecc.private_key_be,
 					 ecc.dhkey_be, &curve_secp256r1);
 	}
 
@@ -205,6 +266,87 @@ static void emulate_le_generate_dhkey(void)
 	bt_recv(buf);
 }
 
+static void emulate_le_ecc_data_encrypt_cmd(void)
+{
+	BT_DBG("emulate_le_ecc_data_encrypt_cmd");
+	struct bt_hci_evt_le_ecc_data_encrypt_complete *evt;
+	struct bt_hci_evt_le_meta_event *meta;
+	struct bt_hci_evt_hdr *hdr;
+	struct net_buf *buf;
+	int ret;
+	uint8_t C2[64] = {0}, C1[32] = {0};
+	BT_DBG("plaintext %s", bt_hex(&ecc_encrypt_data.plaintext[0], 32));
+
+	ret = ecc_data_encrypt(&ecc_encrypt_data.plaintext[0], &C1[0], &C2[0]);
+	buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
+
+	hdr = net_buf_add(buf, sizeof(*hdr));
+	hdr->evt = BT_HCI_EVT_LE_META_EVENT;
+	hdr->len = sizeof(*meta) + sizeof(*evt);
+
+	meta = net_buf_add(buf, sizeof(*meta));
+	meta->subevent = BT_HCI_EVT_LE_ECC_DATA_ENCRYPTION_COMPLETE;
+
+	evt = net_buf_add(buf, sizeof(*evt));
+
+	if (ret == TC_CRYPTO_FAIL) {
+		evt->status = BT_HCI_ERR_UNSPECIFIED;
+		(void)memset(evt->C1, 0xffffffff, sizeof(evt->C1));
+		(void)memset(evt->C2, 0xffffffff, sizeof(evt->C2));
+	} else {
+		evt->status = 0U;
+		sys_memcpy_swap(evt->C1, C1, sizeof(evt->C1));
+		sys_memcpy_swap(evt->C2, C2, sizeof(evt->C2));
+		BT_DBG("C1 %s", bt_hex(evt->C1, 32));
+		BT_DBG("C2 %s", bt_hex(evt->C2, 64));
+	}
+
+	atomic_clear_bit(flags, PENDING_ECC_DATA_ENCRYPT);
+
+	bt_recv(buf);
+}
+
+static void emulate_le_ecc_data_decrypt_cmd(void)
+{
+	BT_DBG("emulate_le_ecc_data_decrypt_cmd");
+	struct bt_hci_evt_le_ecc_data_decrypt_complete *evt;
+	struct bt_hci_evt_le_meta_event *meta;
+	struct bt_hci_evt_hdr *hdr;
+	struct net_buf *buf;
+	int ret;
+	uint8_t m[32] = {0};
+
+	sys_mem_swap(&ecc_decrypt_data.C1[0], 32);
+	sys_mem_swap(&ecc_decrypt_data.C2[0], 64);
+	BT_DBG("C1 %s", bt_hex(&ecc_decrypt_data.C1[0], 32));
+	BT_DBG("C2 %s", bt_hex(&ecc_decrypt_data.C2[0], 64));
+
+	ret = ecc_data_decrypt(&m[0], &ecc_decrypt_data.C1[0], &ecc_decrypt_data.C2[0]);
+	buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
+
+	hdr = net_buf_add(buf, sizeof(*hdr));
+	hdr->evt = BT_HCI_EVT_LE_META_EVENT;
+	hdr->len = sizeof(*meta) + sizeof(*evt);
+
+	meta = net_buf_add(buf, sizeof(*meta));
+	meta->subevent = BT_HCI_EVT_LE_ECC_DATA_DECRYPTION_COMPLETE;
+
+	evt = net_buf_add(buf, sizeof(*evt));
+
+	if (ret == TC_CRYPTO_FAIL) {
+		evt->status = BT_HCI_ERR_UNSPECIFIED;
+		(void)memset(evt->plaintext, 0xffffffff, sizeof(evt->plaintext));
+	} else {
+		evt->status = 0U;
+		sys_memcpy_swap(evt->plaintext, m, sizeof(evt->plaintext));
+		BT_DBG("plaintext %s", bt_hex(evt->plaintext, 32));
+	}
+
+	atomic_clear_bit(flags, PENDING_ECC_DATA_DECRYPT);
+
+	bt_recv(buf);
+}
+
 static void ecc_thread(void *p1, void *p2, void *p3)
 {
 	while (true) {
@@ -214,6 +356,10 @@ static void ecc_thread(void *p1, void *p2, void *p3)
 			emulate_le_p256_public_key_cmd();
 		} else if (atomic_test_bit(flags, PENDING_DHKEY)) {
 			emulate_le_generate_dhkey();
+		} else if (atomic_test_bit(flags, PENDING_ECC_DATA_ENCRYPT)) {
+			emulate_le_ecc_data_encrypt_cmd();
+		} else if (atomic_test_bit(flags, PENDING_ECC_DATA_DECRYPT)) {
+			emulate_le_ecc_data_decrypt_cmd();
 		} else {
 			__ASSERT(0, "Unhandled ECC command");
 		}
@@ -262,6 +408,37 @@ static uint8_t le_gen_dhkey(uint8_t *key, uint8_t key_type)
 	return BT_HCI_ERR_SUCCESS;
 }
 
+static uint8_t le_ecc_set_encrypt_data(uint8_t *plaintext, uint8_t *remote_pk)
+{
+	if (atomic_test_bit(flags, PENDING_PUB_KEY)) {
+		return BT_HCI_ERR_CMD_DISALLOWED;
+	}
+	if (atomic_test_and_set_bit(flags, PENDING_ECC_DATA_ENCRYPT)) {
+		return BT_HCI_ERR_CMD_DISALLOWED;
+	}
+
+	sys_memcpy_swap(ecc_encrypt_data.plaintext, plaintext, 32);
+	memcpy(ecc_encrypt_data.remote_pk, remote_pk, 64);
+	
+	k_sem_give(&cmd_sem);
+	return BT_HCI_ERR_SUCCESS;
+}
+
+static uint8_t le_ecc_set_decrypt_data(uint8_t *C1, uint8_t *C2)
+{
+	if (atomic_test_bit(flags, PENDING_PUB_KEY)) {
+		return BT_HCI_ERR_CMD_DISALLOWED;
+	}
+	if (atomic_test_and_set_bit(flags, PENDING_ECC_DATA_DECRYPT)) {
+		return BT_HCI_ERR_CMD_DISALLOWED;
+	}
+
+	sys_memcpy_swap(ecc_decrypt_data.C1, C1, 32);
+	sys_memcpy_swap(ecc_decrypt_data.C2, C2, 64);
+	k_sem_give(&cmd_sem);
+	return BT_HCI_ERR_SUCCESS;
+}
+
 static void le_gen_dhkey_v1(struct net_buf *buf)
 {
 	struct bt_hci_cp_le_generate_dhkey *cmd;
@@ -304,29 +481,58 @@ static void le_p256_pub_key(struct net_buf *buf)
 	send_cmd_status(BT_HCI_OP_LE_P256_PUBLIC_KEY, status);
 }
 
+static void le_ecc_data_encrypt(struct net_buf *buf)
+{
+	struct bt_hci_cp_le_ecc_data_encrypt  *cmd;
+	uint8_t status;
+
+	cmd = (void *)buf->data;
+	status = le_ecc_set_encrypt_data(cmd->plaintext, cmd->remote_pk);
+
+	net_buf_unref(buf);
+	send_cmd_status(BT_HCI_OP_LE_ECC_DATA_ENCRYPT, status);
+}
+
+static void le_ecc_data_decrypt(struct net_buf *buf)
+{
+	struct bt_hci_cp_le_ecc_data_decrypt  *cmd;
+	uint8_t status;
+
+	cmd = (void *)buf->data;
+	status = le_ecc_set_decrypt_data(cmd->C1, cmd->C2);
+
+	net_buf_unref(buf);
+	send_cmd_status(BT_HCI_OP_LE_ECC_DATA_DECRYPT, status);
+}
+
 int bt_hci_ecc_send(struct net_buf *buf)
 {
+	// BT_INFO("bt_hci_ecc_send");
 	if (bt_buf_get_type(buf) == BT_BUF_CMD) {
 		struct bt_hci_cmd_hdr *chdr = (void *)buf->data;
 
 		switch (sys_le16_to_cpu(chdr->opcode)) {
 		case BT_HCI_OP_LE_P256_PUBLIC_KEY:
-			BT_INFO("PUBLIC_KEY");
 			net_buf_pull(buf, sizeof(*chdr));
 			le_p256_pub_key(buf);
 			return 0;
 		case BT_HCI_OP_LE_GENERATE_DHKEY:
-			BT_INFO("DHKEY");
 			net_buf_pull(buf, sizeof(*chdr));
 			le_gen_dhkey_v1(buf);
 			return 0;
 		case BT_HCI_OP_LE_GENERATE_DHKEY_V2:
-			BT_INFO("DHKEY_V2");
 			net_buf_pull(buf, sizeof(*chdr));
 			le_gen_dhkey_v2(buf);
 			return 0;
+		case BT_HCI_OP_LE_ECC_DATA_ENCRYPT:
+			net_buf_pull(buf, sizeof(*chdr));
+			le_ecc_data_encrypt(buf);
+			return 0;
+		case BT_HCI_OP_LE_ECC_DATA_DECRYPT:
+			net_buf_pull(buf, sizeof(*chdr));
+			le_ecc_data_decrypt(buf);
+			return 0;
 		case BT_HCI_OP_LE_SET_EVENT_MASK:
-			BT_INFO("MASK");
 			clear_ecc_events(buf);
 			break;
 		default:

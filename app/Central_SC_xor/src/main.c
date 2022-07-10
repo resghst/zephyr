@@ -29,10 +29,12 @@ LOG_MODULE_REGISTER(main);
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
+#include <bluetooth/hci_vs.h>
 #include <bluetooth/conn.h>
 #include <bluetooth/uuid.h>
 #include <bluetooth/gatt.h>
 #include <bluetooth/services/bas.h>
+#include <bluetooth/ecc.h>
 
 #ifdef CONFIG_CRYPTO_TINYCRYPT_SHIM
 #define CRYPTO_DRV_NAME CONFIG_CRYPTO_TINYCRYPT_SHIM_DRV_NAME
@@ -48,183 +50,200 @@ LOG_MODULE_REGISTER(main);
 #error "You need to enable one crypto device"
 #endif
 
-#define SENSOR_1_NAME "Temperature Sensor 1"
 
-/* Sensor Internal Update Interval [seconds] */
-#define SENSOR_1_UPDATE_IVAL 5
+#define CUSTOM_CONN_INT_MIN 50
+#define CUSTOM_CONN_INT_MAX 50
 
-/* ESS error definitions */
-#define ESS_ERR_WRITE_REJECT 0x80
-#define ESS_ERR_COND_NOT_SUPP 0x81
-
-/* ESS Trigger Setting conditions */
-#define ESS_TRIGGER_INACTIVE 0x00
-#define ESS_FIXED_TIME_INTERVAL 0x01
-#define ESS_NO_LESS_THAN_SPECIFIED_TIME 0x02
-#define ESS_VALUE_CHANGED 0x03
-#define ESS_LESS_THAN_REF_VALUE 0x04
-#define ESS_LESS_OR_EQUAL_TO_REF_VALUE 0x05
-#define ESS_GREATER_THAN_REF_VALUE 0x06
-#define ESS_GREATER_OR_EQUAL_TO_REF_VALUE 0x07
-#define ESS_EQUAL_TO_REF_VALUE 0x08
-#define ESS_NOT_EQUAL_TO_REF_VALUE 0x09
-
-uint32_t cap_flags;
+#define BT_LE_CONN_PARAM_CUSTOM BT_LE_CONN_PARAM(CUSTOM_CONN_INT_MIN, \
+						  CUSTOM_CONN_INT_MAX, 0, 400)
 
 static void start_scan(void);
 static struct bt_conn *default_conn;
+static uint16_t default_conn_handle;
 static struct bt_uuid_16 uuid = BT_UUID_INIT_16(0);
 static struct bt_gatt_discover_params discover_params;
-static struct bt_gatt_subscribe_params subscribe_params;
+static struct bt_gatt_subscribe_params subscribe_params, subscribe_params1;
 
-int validate_hw_compatibility(const struct device *dev)
+static void set_tx_power(uint8_t handle_type, uint16_t handle, int8_t tx_pwr_lvl)
 {
-	uint32_t flags = 0U;
+	struct bt_hci_cp_vs_write_tx_power_level *cp;
+	struct bt_hci_rp_vs_write_tx_power_level *rp;
+	struct net_buf *buf, *rsp = NULL;
+	int err;
 
-	flags = cipher_query_hwcaps(dev);
-	if ((flags & CAP_RAW_KEY) == 0U) {
-		LOG_INF("Please provision the key separately "
-			"as the module doesnt support a raw key");
-		return -1;
+	buf = bt_hci_cmd_create(BT_HCI_OP_VS_WRITE_TX_POWER_LEVEL,
+				sizeof(*cp));
+	if (!buf) {
+		printk("Unable to allocate command buffer\n");
+		return;
 	}
 
-	if ((flags & CAP_SYNC_OPS) == 0U) {
-		LOG_ERR("The app assumes sync semantics. "
-		  "Please rewrite the app accordingly before proceeding");
-		return -1;
+	cp = net_buf_add(buf, sizeof(*cp));
+	cp->handle = sys_cpu_to_le16(handle);
+	cp->handle_type = handle_type;
+	cp->tx_power_level = tx_pwr_lvl;
+
+	err = bt_hci_cmd_send_sync(BT_HCI_OP_VS_WRITE_TX_POWER_LEVEL,
+				   buf, &rsp);
+	if (err) {
+		uint8_t reason = rsp ?
+			((struct bt_hci_rp_vs_write_tx_power_level *)
+			  rsp->data)->status : 0;
+		printk("Set Tx power err: %d reason 0x%02x\n", err, reason);
+		return;
 	}
 
-	if ((flags & CAP_SEPARATE_IO_BUFS) == 0U) {
-		LOG_ERR("The app assumes distinct IO buffers. "
-		"Please rewrite the app accordingly before proceeding");
-		return -1;
+	rp = (void *)rsp->data;
+	printk("Actual Tx Power: %d\n", rp->selected_tx_power);
+
+	net_buf_unref(rsp);
+}
+
+static void get_tx_power(uint8_t handle_type, uint16_t handle, int8_t *tx_pwr_lvl)
+{
+	struct bt_hci_cp_vs_read_tx_power_level *cp;
+	struct bt_hci_rp_vs_read_tx_power_level *rp;
+	struct net_buf *buf, *rsp = NULL;
+	int err;
+
+	*tx_pwr_lvl = 0xFF;
+	buf = bt_hci_cmd_create(BT_HCI_OP_VS_READ_TX_POWER_LEVEL,
+				sizeof(*cp));
+	if (!buf) {
+		printk("Unable to allocate command buffer\n");
+		return;
 	}
 
-	cap_flags = CAP_RAW_KEY | CAP_SYNC_OPS | CAP_SEPARATE_IO_BUFS;
+	cp = net_buf_add(buf, sizeof(*cp));
+	cp->handle = sys_cpu_to_le16(handle);
+	cp->handle_type = handle_type;
 
-	return 0;
+	err = bt_hci_cmd_send_sync(BT_HCI_OP_VS_READ_TX_POWER_LEVEL,
+				   buf, &rsp);
+	if (err) {
+		uint8_t reason = rsp ?
+			((struct bt_hci_rp_vs_read_tx_power_level *)
+			  rsp->data)->status : 0;
+		printk("Read Tx power err: %d reason 0x%02x\n", err, reason);
+		return;
+	}
 
+	rp = (void *)rsp->data;
+	*tx_pwr_lvl = rp->tx_power_level;
+
+	net_buf_unref(rsp);
 }
 
 /* Environmental Sensing Service Declaration */
-
-struct es_measurement {
-	uint16_t flags; /* Reserved for Future Use */
-	uint8_t sampling_func;
-	uint32_t meas_period;
-	uint32_t update_interval;
-	uint8_t application;
-	uint8_t meas_uncertainty;
+struct ecc_data{
+	uint8_t c1[32];
+	uint8_t c2[64];
 };
 
-struct temperature_sensor {
-	int16_t temp_value;
+/* security setting */
+bool aes_finished = false, ecc_c1_finished = false, ecc_c2_finished = false;
+uint8_t *shift_key, *pub_key, *aes_key;
 
-	/* Valid Range */
-	int16_t lower_limit;
-	int16_t upper_limit;
-
-	/* ES trigger setting - Value Notification condition */
-	uint8_t condition;
-	union {
-		uint32_t seconds;
-		int16_t ref_val; /* Reference temperature */
-	};
-
-	struct es_measurement meas;
-};
-
-struct humidity_sensor {
-	int16_t humid_value;
-
-	struct es_measurement meas;
-};
-
-struct read_es_measurement_rp {
-	uint16_t flags; /* Reserved for Future Use */
-	uint8_t sampling_function;
-	uint8_t measurement_period[3];
-	uint8_t update_interval[3];
-	uint8_t application;
-	uint8_t measurement_uncertainty;
-} __packed;
-
-struct es_trigger_setting_seconds {
-	uint8_t condition;
-	uint8_t sec[3];
-} __packed;
-
-struct es_trigger_setting_reference {
-	uint8_t condition;
-	int16_t ref_val;
-} __packed;
-
-static uint8_t notify_func(struct bt_conn *conn,
-			   struct bt_gatt_subscribe_params *params,
-			   const void *data, uint16_t length)
+static uint8_t aes_notify_func(struct bt_conn *conn, struct bt_gatt_subscribe_params *params, const void *data, uint16_t length)
 {
 	if (!data) {
 		LOG_DBG("[UNSUBSCRIBED]");
 		params->value_handle = 0U;
 		return BT_GATT_ITER_STOP;
 	}
-	LOG_DBG("[NOTIFICATION] data %p length %u Temperature %d C", \
-		data, length, ((uint16_t *)data)[0]);
+	
+	uint8_t plaintext[16], enc_data[16];
+	memcpy(&enc_data[0], data, sizeof(uint8_t)*length);
+	LOG_DBG("[NOTIFICATION] AES handle %u length %d recived %s", params->value_handle, length, bt_hex(&enc_data[0], sizeof(uint8_t)*length));
+	bt_proposed_decrypt_le(aes_key, &plaintext[0], &enc_data[0], shift_key);
+	LOG_DBG("\t\tDecrypted: %s", bt_hex(&plaintext[0], 16));
+	return BT_GATT_ITER_CONTINUE;
+}
+
+static void bt_ecc_data_decrypt_finished(const uint8_t *M)
+{
+	LOG_DBG("bt_ecc_data_decrypt_finished");
+	LOG_DBG("M %s", bt_hex(M, 32));
+	LOG_DBG("=============================");
+}
+
+static struct bt_ecc_data_decrypt_cb ecc_data_decrypt_cb = {
+	.func = bt_ecc_data_decrypt_finished,
+};
+
+static uint8_t ecc_notify_func(struct bt_conn *conn, struct bt_gatt_subscribe_params *params,
+			   const void *data, uint16_t length)
+{
+	struct ecc_data ecc_decrypt;
+	if (!data) {
+		LOG_DBG("[UNSUBSCRIBED]");
+		params->value_handle = 0U;
+		return BT_GATT_ITER_STOP;
+	}
+	LOG_DBG("[NOTIFICATION] ECC handle %u length %u", params->value_handle, length);
+	memcpy(&ecc_decrypt, data, sizeof(ecc_decrypt));
+	LOG_DBG("\t\tECC C1 %s", bt_hex(ecc_decrypt.c1, 32));
+	LOG_DBG("\t\tECC C2 %s", bt_hex(ecc_decrypt.c2, 64));
+	bt_ecc_data_decrypt(ecc_decrypt.c1, ecc_decrypt.c2, ecc_data_decrypt_cb.func);
 	return BT_GATT_ITER_CONTINUE;
 }
 
 int flagccc=0;
-static uint8_t discover_func(struct bt_conn *conn,
-			     const struct bt_gatt_attr *attr,
+static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 			     struct bt_gatt_discover_params *params)
 {
 	int err;
-	if (!attr) {
-		LOG_DBG("Discover complete");
-		// (void)memset(params, 0, sizeof(*params));
-		return BT_GATT_ITER_STOP;
-	}
+	if (!attr) { return BT_GATT_ITER_STOP; }
 
 	LOG_DBG("[ATTRIBUTE] handle %u", attr->handle);
 
 	if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_ESS)) { 
+		LOG_DBG("Process uuid BT_UUID_TEMPERATURE");
 		memcpy(&uuid, BT_UUID_TEMPERATURE, sizeof(uuid));
 		discover_params.uuid = &uuid.uuid;
 		discover_params.start_handle = attr->handle + 1;
 		discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
-		LOG_DBG("gatt_discover tmp");
 		err = bt_gatt_discover(conn, &discover_params);
-		if (err) {
-			LOG_DBG("Discover failed (err %d)", err);
-		}
-	} else if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_TEMPERATURE)) { 
-		memcpy(&uuid, BT_UUID_GATT_CCC, sizeof(uuid));
+		if (err) { LOG_DBG("Discover failed (err %d)", err); }
+	} 
+	else if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_TEMPERATURE)) { 
+		LOG_DBG("Process uuid BT_UUID_HUMIDITY");
+		memcpy(&uuid, BT_UUID_HUMIDITY, sizeof(uuid));
 		discover_params.uuid = &uuid.uuid;
 		discover_params.start_handle = attr->handle + 2;
 		discover_params.type = BT_GATT_DISCOVER_DESCRIPTOR;
 		subscribe_params.value_handle = bt_gatt_attr_value_handle(attr);
-		LOG_DBG("gatt_discover ccc");
 		err = bt_gatt_discover(conn, &discover_params);
-		if (err) {
-			LOG_DBG("Discover failed (err %d)", err);
-		}
-	} else if(!bt_uuid_cmp(discover_params.uuid, BT_UUID_GATT_CCC) && !flagccc){
-		LOG_DBG("GATT_CCC");
-		flagccc=1;
-		subscribe_params.notify = notify_func;
+		if (err) { LOG_DBG("Discover failed (err %d)", err); }
+	} 
+	else if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_HUMIDITY)) { 
+		LOG_DBG("Process uuid BT_UUID_GATT_CCC");
+		memcpy(&uuid, BT_UUID_GATT_CCC, sizeof(uuid));
+		discover_params.uuid = &uuid.uuid;
+		discover_params.start_handle = attr->handle + 3;
+		discover_params.type = BT_GATT_DISCOVER_DESCRIPTOR;
+		subscribe_params1.value_handle = bt_gatt_attr_value_handle(attr);
+		err = bt_gatt_discover(conn, &discover_params);
+		if (err) { LOG_DBG("Discover failed (err %d)", err); }
+	} 
+	else if(!bt_uuid_cmp(discover_params.uuid, BT_UUID_GATT_CCC) && !flagccc){
+		LOG_DBG("Process subscribed UUID");
+		flagccc = 1;
+		subscribe_params.notify = aes_notify_func;
 		subscribe_params.value = BT_GATT_CCC_NOTIFY;
 		subscribe_params.ccc_handle = attr->handle;
-
 		err = bt_gatt_subscribe(conn, &subscribe_params);
-		if (err && err != -EALREADY) {
-			LOG_DBG("Subscribe failed (err %d)", err);
-		} else {
-			LOG_DBG("[SUBSCRIBED]");
-		}
+		if (err && err != -EALREADY) { LOG_DBG("Subscribe failed (err %d)", err); } 
+		else { LOG_DBG("[SUBSCRIBED]"); }
 
+		subscribe_params1.notify = ecc_notify_func;
+		subscribe_params1.value = BT_GATT_CCC_NOTIFY;
+		subscribe_params1.ccc_handle = attr->handle;
+		err = bt_gatt_subscribe(conn, &subscribe_params1);
+		if (err && err != -EALREADY) { LOG_DBG("Subscribe failed (err %d)", err); } 
+		else { LOG_DBG("[SUBSCRIBED]"); }
 		return BT_GATT_ITER_STOP;
 	}
-	
 	return BT_GATT_ITER_CONTINUE;
 }
 
@@ -232,10 +251,8 @@ static bool eir_found(struct bt_data *data, void *user_data)
 {
 	bt_addr_le_t *addr = user_data;
 	int i;
-
-	LOG_DBG("[AD]: %u data_len %u", data->type, data->data_len);
+	// LOG_DBG("[AD]: %u data_len %u", data->type, data->data_len);
 	
-
 	switch (data->type) {
 	case BT_DATA_UUID16_SOME:
 	case BT_DATA_UUID16_ALL:
@@ -254,9 +271,7 @@ static bool eir_found(struct bt_data *data, void *user_data)
 			uuid = BT_UUID_DECLARE_16(sys_le16_to_cpu(u16));
 			
 			// BT_UUID_ESS is the application Type
-			if (bt_uuid_cmp(uuid, BT_UUID_ESS)) {
-				continue;
-			}
+			if (bt_uuid_cmp(uuid, BT_UUID_ESS)) { continue; }
 
 			LOG_DBG("is BT_UUID_ESS");
 			err = bt_le_scan_stop();
@@ -266,7 +281,8 @@ static bool eir_found(struct bt_data *data, void *user_data)
 			}
 
 			LOG_DBG("connnect");
-			param = BT_LE_CONN_PARAM_DEFAULT;
+			// param = BT_LE_CONN_PARAM_DEFAULT;
+			param = BT_LE_CONN_PARAM_CUSTOM;
 			err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN,
 						param, &default_conn);
 			if (err) {
@@ -335,7 +351,12 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
+	if (bt_conn_set_security(conn, BT_SECURITY_L4)) {
+		LOG_DBG("Failed to set security");
+	}
+	int8_t tx_power = 8;
 	LOG_DBG("Connected: %s", addr);
+	set_tx_power(BT_HCI_VS_LL_HANDLE_TYPE_CONN, default_conn_handle, tx_power);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -345,6 +366,33 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	LOG_DBG("Disconnected from %s (reason 0x%02x)", addr, reason);
+}
+
+static void identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
+			      const bt_addr_le_t *identity)
+{
+	char addr_identity[BT_ADDR_LE_STR_LEN];
+	char addr_rpa[BT_ADDR_LE_STR_LEN];
+	bt_addr_le_to_str(identity, addr_identity, sizeof(addr_identity));
+	bt_addr_le_to_str(rpa, addr_rpa, sizeof(addr_rpa));
+	LOG_DBG("Identity resolved %s -> %s", addr_rpa, addr_identity);
+
+	if (conn == default_conn) {
+		LOG_DBG("gatt_discover BT_UUID_ESS");
+		memcpy(&uuid, BT_UUID_ESS, sizeof(uuid));
+		discover_params.uuid = &uuid.uuid;
+		discover_params.func = discover_func;
+		discover_params.start_handle = BT_ATT_FIRST_ATTTRIBUTE_HANDLE;
+		discover_params.end_handle = BT_ATT_LAST_ATTTRIBUTE_HANDLE;
+		discover_params.type = BT_GATT_DISCOVER_PRIMARY;
+		int err = bt_gatt_discover(default_conn, &discover_params);
+
+		LOG_DBG("gatt_discovered");
+		if (err) {
+			LOG_DBG("Discover failed(err %d)", err);
+			return;
+		}
+	}
 }
 
 static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
@@ -357,33 +405,18 @@ static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_
 		LOG_DBG("Security changed: %s level %u", addr, level);
 		LOG_DBG(" -enc_key: %d", bt_conn_enc_key_size(conn));
 		LOG_DBG(" -security_level: %d", bt_conn_get_security(conn));
-		bt_conn_enc_key_info(conn);
-	} else {
-		LOG_DBG("Security failed: %s level %u err %d", addr, level, err);
-	}
+	} else { LOG_DBG("Security failed: %s level %u err %d", addr, level, err); }
 
-	if (conn == default_conn) {
-		memcpy(&uuid, BT_UUID_ESS, sizeof(uuid));
-		discover_params.uuid = &uuid.uuid;
-		discover_params.func = discover_func;
-		discover_params.start_handle = BT_ATT_FIRST_ATTTRIBUTE_HANDLE;
-		discover_params.end_handle = BT_ATT_LAST_ATTTRIBUTE_HANDLE;
-		discover_params.type = BT_GATT_DISCOVER_PRIMARY;
-
-		LOG_DBG("gatt_discover BT_UUID_ESS");
-		err = bt_gatt_discover(default_conn, &discover_params);
-		LOG_DBG("gatt_discovered");
-		if (err) {
-			LOG_DBG("Discover failed(err %d)", err);
-			return;
-		}
-	}
+	shift_key = bt_conn_get_shift_key(conn);
+	aes_key = bt_conn_get_aes_key(conn);
+	pub_key = bt_conn_get_public_key(conn);
+	default_conn = conn;
 }
 
 static struct bt_conn_cb conn_callbacks = {
 	.connected = connected,
 	.disconnected = disconnected,
-	.identity_resolved = NULL,
+	.identity_resolved = identity_resolved,
 	.security_changed = security_changed,
 };
 
@@ -440,8 +473,8 @@ static struct bt_conn_auth_cb auth_cb = {
 
 void main(void)
 {
+	LOG_INF("DEV: Master");
 	int err;
-
 	err = bt_enable(NULL);
 	if (err) {
 		LOG_DBG("Bluetooth init failed (err %d)", err);
@@ -449,6 +482,7 @@ void main(void)
 	}
 
 	LOG_DBG("Bluetooth initialized");
+	
 
 	bt_conn_auth_cb_register(&auth_cb);
 	bt_conn_cb_register(&conn_callbacks);

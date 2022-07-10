@@ -4,5 +4,5 @@ sample:
 tests:
   sample.bluetooth.ibeacon:
     harness: bluetooth
-    platform_allow: bbc_microbit qemu_x86
+    platform_allow: bbc_microbit qemu_x86 nrf52840dk_nrf52840
     tags: bluetooth

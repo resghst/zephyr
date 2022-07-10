@@ -722,6 +722,9 @@ bt_security_t bt_conn_get_security(struct bt_conn *conn);
  *  @return Encryption key size.
  */
 uint8_t bt_conn_enc_key_size(struct bt_conn *conn);
+uint8_t* bt_conn_get_shift_key(struct bt_conn *conn);
+uint8_t* bt_conn_get_aes_key(struct bt_conn *conn);
+uint8_t* bt_conn_get_public_key(struct bt_conn *conn);
 
 enum bt_security_err {
 	/** Security procedure successful. */

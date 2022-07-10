@@ -13,12 +13,12 @@ enum {
 	BT_KEYS_LOCAL_CSRK     = BIT(3),
 	BT_KEYS_REMOTE_CSRK    = BIT(4),
 	BT_KEYS_LTK_P256       = BIT(5),
-	BT_KEYS_XORK       = BIT(6),
+	BT_KEYS_SHIFTKEY       = BIT(6),
 
 	BT_KEYS_ALL            = (BT_KEYS_SLAVE_LTK | BT_KEYS_IRK | \
 				  BT_KEYS_LTK | BT_KEYS_LOCAL_CSRK | \
 				  BT_KEYS_REMOTE_CSRK | BT_KEYS_LTK_P256 | \
-				  BT_KEYS_XORK),
+				  BT_KEYS_SHIFTKEY),
 };
 
 enum {
@@ -50,8 +50,8 @@ struct bt_csrk {
 	uint32_t                   cnt;
 };
 
-struct bt_xork {
-	uint8_t                    val[16];
+struct bt_shift_key {
+	uint8_t                    val[2];
 };
 
 struct bt_keys {
@@ -62,16 +62,16 @@ struct bt_keys {
 	uint8_t                    enc_size;
 	uint8_t                    flags;
 	uint16_t                   keys;
+	uint8_t					   pkey[64];
 	struct bt_ltk           ltk;
 	struct bt_irk           irk;
-	struct bt_xork			xor_key;
+	struct bt_shift_key			shift_key;
 #if defined(CONFIG_BT_SIGNING)
 	struct bt_csrk          local_csrk;
 	struct bt_csrk          remote_csrk;
 #endif /* BT_SIGNING */
 #if !defined(CONFIG_BT_SMP_SC_PAIR_ONLY)
 	struct bt_ltk           slave_ltk;
-	struct bt_xork			slave_xor_key;
 #endif /* CONFIG_BT_SMP_SC_PAIR_ONLY */
 #if (defined(CONFIG_BT_KEYS_OVERWRITE_OLDEST))
 	uint32_t                   aging_counter;

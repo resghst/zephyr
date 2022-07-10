@@ -296,6 +296,9 @@ static inline char *log_strdup(const char *str)
 	return z_log_strdup(str);
 }
 
+const char *bt_hex_real(const void *buf, size_t len);
+#define bt_hex(buf, len) log_strdup(bt_hex_real(buf, len))
+
 #ifdef __cplusplus
 }
 #define LOG_IN_CPLUSPLUS 1

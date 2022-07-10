@@ -66,7 +66,14 @@ int bt_encrypt_le(const uint8_t key[16], const uint8_t plaintext[16],
  */
 int bt_encrypt_be(const uint8_t key[16], const uint8_t plaintext[16],
 		  uint8_t enc_data[16]);
-
+int bt_proposed_encrypt_le(const uint8_t key[16], const uint8_t plaintext[16],
+		  uint8_t enc_data[16], const uint8_t shift_key[5]);
+int bt_proposed_decrypt_le(const uint8_t key[16], uint8_t plaintext[16],
+		  uint8_t enc_data[16], const uint8_t shift_key[5]);
+int bt_aes_encrypt_le(const uint8_t key[16], const uint8_t plaintext[16],
+		  uint8_t enc_data[16]);
+int bt_aes_decrypt_le(const uint8_t key[16], uint8_t plaintext[16],
+		  uint8_t enc_data[16]);
 
 /** @brief Decrypt big-endian data with AES-CCM.
  *

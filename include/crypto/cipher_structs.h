@@ -28,6 +28,8 @@
 /** Cipher Algorithm */
 enum cipher_algo {
 	CRYPTO_CIPHER_ALGO_AES = 1,
+	CRYPTO_CIPHER_ALGO_PROPOSED_AES = 2,
+	CRYPTO_CIPHER_ALGO_PROPOSED_ECC = 3,
 };
 
 /** Cipher Operation */

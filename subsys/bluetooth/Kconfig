@@ -46,8 +46,20 @@ config SYSTEM_WORKQUEUE_PRIORITY
 if BT_HCI
 
 config BT_PROPOSED_SC
-	int "Maximum number of Broadcast Isochronous Groups (BIGs) to support"
-	default 1
+	int "LAEBLE"
+	default 0
+	help
+	  The proposed method config.
+
+config BT_PROPOSED_SC_ROUND
+	int "The number of round (LAEBLE)"
+	default 11
+	help
+	  The proposed method config.
+
+config BT_PROPOSED_SC_K
+	int "The length of K (LAEBLE)"
+	default 5
 	help
 	  The proposed method config.
 

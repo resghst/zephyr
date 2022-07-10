@@ -9,7 +9,15 @@
 
 #include <sys/dlist.h>
 
+#include <sys/byteorder.h>
+
 #include <hal/nrf_ecb.h>
+
+#include <tinycrypt/constants.h>
+#include <tinycrypt/hmac_prng.h>
+#include <tinycrypt/aes.h>
+#include <tinycrypt/utils.h>
+
 
 #include "util/mem.h"
 #include "hal/ecb.h"
@@ -21,6 +29,13 @@
 
 struct ecb_param {
 	uint8_t key[16];
+	uint8_t clear_text[16];
+	uint8_t cipher_text[16];
+} __packed;
+
+struct ecb_proposed_param {
+	uint8_t key[16];
+	uint8_t shift_key[5];
 	uint8_t clear_text[16];
 	uint8_t cipher_text[16];
 } __packed;
@@ -48,6 +63,77 @@ static void do_ecb(struct ecb_param *ecb)
 	NRF_ECB->ECBDATAPTR = 0;
 }
 
+static void do_proposed_encrypt_ecb(struct ecb_proposed_param *ecb)
+{
+	struct tc_aes_key_sched_struct s;
+	uint8_t tmp[16], tmp_shift_key[5];
+	memcpy(tmp, ecb->key, 16);
+	memcpy(tmp_shift_key, ecb->shift_key, 5);
+	BT_DBG("key %s", bt_hex(tmp, 16));
+	BT_DBG("shift_key %s", bt_hex(tmp_shift_key, 5));
+
+	if (tc_aes128_set_encrypt_key_proposed(&s, tmp) == TC_CRYPTO_FAIL) { return; }
+
+	memcpy(tmp, ecb->clear_text, 16);
+	BT_DBG("plaintext %s", bt_hex(tmp, 16));
+	if (tc_aes_encrypt_proposed(ecb->cipher_text, tmp, &s, tmp_shift_key) == TC_CRYPTO_FAIL) { return; }
+	BT_DBG("cipher_text %s", bt_hex(ecb->cipher_text, 16));
+	sys_mem_swap(ecb->cipher_text, 16);
+}
+
+static void do_proposed_decrypt_ecb(struct ecb_proposed_param *ecb)
+{
+	struct tc_aes_key_sched_struct s;
+	uint8_t tmp[16], tmp_shift_key[5];
+	memcpy(tmp, ecb->key, sizeof(tmp));
+	memcpy(tmp_shift_key, ecb->shift_key, sizeof(tmp_shift_key));
+	
+	BT_DBG("key %s", bt_hex(tmp, 16));
+	BT_DBG("shift_key %s", bt_hex(tmp_shift_key, 5));
+
+	if (tc_aes128_set_encrypt_key_proposed(&s, tmp) == TC_CRYPTO_FAIL) { return; }
+
+	memcpy(tmp, ecb->cipher_text, 16);
+	BT_DBG("ciphertext %s", bt_hex(tmp, 16));
+
+	if (tc_aes_decrypt_proposed(ecb->clear_text, tmp, &s, tmp_shift_key) == TC_CRYPTO_FAIL) { return; }
+	BT_DBG("plaintext %s", bt_hex(ecb->clear_text, 16));
+	sys_mem_swap(ecb->clear_text, 16);
+}
+
+static void do_aes_encrypt_ecb(struct ecb_proposed_param *ecb)
+{
+	struct tc_aes_key_sched_struct s;
+	uint8_t tmp[16];
+	memcpy(tmp, ecb->key, 16);
+	BT_DBG("key %s", bt_hex(tmp, 16));
+
+	if (tc_aes128_set_encrypt_key(&s, tmp) == TC_CRYPTO_FAIL) { return; }
+
+	memcpy(tmp, ecb->clear_text, 16);
+	BT_DBG("plaintext %s", bt_hex(tmp, 16));
+	if (tc_aes_encrypt(ecb->cipher_text, tmp, &s) == TC_CRYPTO_FAIL) { return; }
+	BT_DBG("cipher_text %s", bt_hex(ecb->cipher_text, 16));
+	sys_mem_swap(ecb->cipher_text, 16);
+}
+
+static void do_aes_decrypt_ecb(struct ecb_proposed_param *ecb)
+{
+	struct tc_aes_key_sched_struct s;
+	uint8_t tmp[16], tmp_shift_key[5];
+	memcpy(tmp, ecb->key, sizeof(tmp));
+	BT_DBG("key %s", bt_hex(tmp, 16));
+
+	if (tc_aes128_set_encrypt_key(&s, tmp) == TC_CRYPTO_FAIL) { return; }
+
+	memcpy(tmp, ecb->cipher_text, 16);
+	BT_DBG("ciphertext %s", bt_hex(tmp, 16));
+
+	if (tc_aes_decrypt(ecb->clear_text, tmp, &s) == TC_CRYPTO_FAIL) { return; }
+	BT_DBG("plaintext %s", bt_hex(ecb->clear_text, 16));
+	sys_mem_swap(ecb->clear_text, 16);
+}
+
 void ecb_encrypt_be(uint8_t const *const key_be, uint8_t const *const clear_text_be,
 		    uint8_t * const cipher_text_be)
 {
@@ -65,7 +151,7 @@ void ecb_encrypt(uint8_t const *const key_le, uint8_t const *const clear_text_le
 		 uint8_t * const cipher_text_le, uint8_t * const cipher_text_be)
 {
 	struct ecb_param ecb;
-
+	BT_DBG("ecb_encrypt");
 	mem_rcopy(&ecb.key[0], key_le, sizeof(ecb.key));
 	mem_rcopy(&ecb.clear_text[0], clear_text_le, sizeof(ecb.clear_text));
 
@@ -80,6 +166,56 @@ void ecb_encrypt(uint8_t const *const key_le, uint8_t const *const clear_text_le
 		memcpy(cipher_text_be, &ecb.cipher_text[0],
 			 sizeof(ecb.cipher_text));
 	}
+}
+
+void ecb_aes_encrypt(uint8_t const *const key_le, uint8_t const *const clear_text_le,uint8_t * const cipher_text_le, uint8_t * const cipher_text_be)
+{
+	struct ecb_proposed_param ecb;
+	BT_DBG("ecb_proposed_encrypt");
+	mem_rcopy(&ecb.key[0], key_le, sizeof(ecb.key));
+	mem_rcopy(&ecb.clear_text[0], clear_text_le, sizeof(ecb.clear_text));
+
+	do_aes_encrypt_ecb(&ecb);
+	memcpy(cipher_text_le, &ecb.cipher_text[0], sizeof(ecb.cipher_text));
+}
+
+
+void ecb_aes_decrypt(uint8_t const *const key_le, uint8_t const *const cipher_text_le, uint8_t * const clear_text_le, uint8_t * const cipher_text_be)
+{
+	struct ecb_proposed_param ecb;
+	BT_DBG("ecb_proposed_decrypt");
+	mem_rcopy(&ecb.key[0], key_le, sizeof(ecb.key));
+	mem_rcopy(&ecb.cipher_text[0], cipher_text_le, sizeof(ecb.cipher_text));
+
+	do_aes_decrypt_ecb(&ecb);
+	memcpy(clear_text_le, &ecb.clear_text[0], sizeof(ecb.clear_text));
+}
+
+void ecb_proposed_encrypt(uint8_t const *const key_le, uint8_t const *const shift_key_le, uint8_t const *const clear_text_le,
+		 uint8_t * const cipher_text_le, uint8_t * const cipher_text_be)
+{
+	struct ecb_proposed_param ecb;
+	BT_DBG("ecb_proposed_encrypt");
+	mem_rcopy(&ecb.key[0], key_le, sizeof(ecb.key));
+	mem_rcopy(&ecb.shift_key[0], shift_key_le, sizeof(ecb.shift_key));
+	mem_rcopy(&ecb.clear_text[0], clear_text_le, sizeof(ecb.clear_text));
+
+	do_proposed_encrypt_ecb(&ecb);
+	memcpy(cipher_text_le, &ecb.cipher_text[0], sizeof(ecb.cipher_text));
+}
+
+
+void ecb_proposed_decrypt(uint8_t const *const key_le, uint8_t const *const shift_key_le, uint8_t const *const cipher_text_le,
+		 uint8_t * const clear_text_le, uint8_t * const cipher_text_be)
+{
+	struct ecb_proposed_param ecb;
+	BT_DBG("ecb_proposed_decrypt");
+	mem_rcopy(&ecb.key[0], key_le, sizeof(ecb.key));
+	mem_rcopy(&ecb.shift_key[0], shift_key_le, sizeof(ecb.shift_key));
+	mem_rcopy(&ecb.cipher_text[0], cipher_text_le, sizeof(ecb.cipher_text));
+
+	do_proposed_decrypt_ecb(&ecb);
+	memcpy(clear_text_le, &ecb.clear_text[0], sizeof(ecb.clear_text));
 }
 
 uint32_t ecb_encrypt_nonblocking(struct ecb *ecb)

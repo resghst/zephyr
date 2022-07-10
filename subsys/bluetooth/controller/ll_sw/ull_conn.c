@@ -3017,7 +3017,7 @@ static inline void event_enc_reject_prep(struct ll_conn *conn,
 
 static inline void event_enc_prep(struct ll_conn *conn)
 {
-	BT_INFO("event_enc_prep");
+	// BT_INFO("event_enc_prep");
 	struct lll_conn *lll = &conn->lll;
 	struct pdu_data *pdu_ctrl_tx;
 	struct node_tx *tx;

@@ -163,3 +163,56 @@ int bt_encrypt_be(const uint8_t key[16], const uint8_t plaintext[16],
 
 	return 0;
 }
+
+int bt_proposed_encrypt_le(const uint8_t key[16], const uint8_t plaintext[16],
+		  uint8_t enc_data[16], const uint8_t shift_key[5])
+{
+	struct tc_aes_key_sched_struct s;
+	uint8_t tmp[16];
+	BT_DBG("bt_proposed_encrypt_le");
+	BT_DBG("key %s", bt_hex(key, 16));
+	// BT_DBG("plaintext %s", bt_hex(plaintext, 16));
+
+	sys_memcpy_swap(tmp, key, 16);
+
+	if (tc_aes128_set_encrypt_key_proposed(&s, tmp) == TC_CRYPTO_FAIL) {
+		return -EINVAL;
+	}
+
+	sys_memcpy_swap(tmp, plaintext, 16);
+
+	if (tc_aes_encrypt_proposed(enc_data, tmp, &s, shift_key) == TC_CRYPTO_FAIL) {
+		return -EINVAL;
+	}
+
+	sys_mem_swap(enc_data, 16);
+	BT_DBG("enc_data %s", bt_hex(enc_data, 16));
+	return 0;
+}
+
+int bt_proposed_decrypt_le(const uint8_t key[16], uint8_t plaintext[16],
+		  uint8_t ciphertext[16], const uint8_t shift_key[5])
+{
+	struct tc_aes_key_sched_struct s;
+	uint8_t tmp[16];
+	BT_DBG("bt_proposed_decrypt_le");
+	BT_DBG("key %s", bt_hex(key, 16));
+	BT_DBG("ciphertext %s", bt_hex(ciphertext, 16));
+
+	sys_memcpy_swap(tmp, key, 16);
+
+	if (tc_aes128_set_encrypt_key_proposed(&s, key) == TC_CRYPTO_FAIL) {
+		return -EINVAL;
+	}
+
+	sys_memcpy_swap(tmp, ciphertext, 16);
+
+	if (tc_aes_decrypt_proposed(plaintext, ciphertext, &s, shift_key) == TC_CRYPTO_FAIL) {
+		return -EINVAL;
+	}
+
+	sys_mem_swap(plaintext, 16);
+
+	BT_DBG("plaintext %s", bt_hex(plaintext, 16));
+	return 0;
+}
